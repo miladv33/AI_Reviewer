@@ -201,14 +201,11 @@ jobs:
             exit 1
           fi
           
-          PROMPT="You are an expert code reviewer. Analyze the following PR content and provide a concise review focusing on:
-          1. Key changes and their purpose
-          2. Technical concerns or improvements
-          3. Security considerations
-          4. Specific recommendations
-
-          PR content:
-          ${{ env.PR_CONTENT }}"
+          # Read the prompt template
+          PROMPT_TEMPLATE=$(cat .github/workflows/codereviewprompt.txt)
+          
+          # Replace placeholder with actual PR content
+          PROMPT="${PROMPT_TEMPLATE/\{\{PR_CONTENT\}\}/${{ env.PR_CONTENT }}}"
           
           REVIEW_OUTPUT=$(curl -s -X POST http://localhost:11434/api/generate \
             -H 'Content-Type: application/json' \
