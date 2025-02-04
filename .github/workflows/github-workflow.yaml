@@ -212,31 +212,34 @@ jobs:
 
     - name: Review PR with Ollama
       run: |
-        # Properly escape the PR diff for JSON
-        ESCAPED_DIFF=$(echo "${{ env.PR_DIFF }}" | jq -sR .)
-        
-        echo "=== Starting Code Review ==="
-        
-        # Create JSON payload and send to Ollama
-        JSON_PAYLOAD=$(cat << EOF
-        {
-          "model": "llama2",
-          "prompt": "You are a code reviewer. Review these changes and provide:\n1. Summary of changes\n2. Potential issues\n3. Improvement suggestions\n4. Security considerations\n\nChanges to review:\n${ESCAPED_DIFF}",
-          "stream": true
-        }
-        EOF
-        )
-        
-        # Send to Ollama and process the streaming response
-        curl -s -X POST http://localhost:11434/api/generate \
+        # Store diff in a file for easier handling
+        echo "${{ env.PR_DIFF }}" > pr_diff.txt
+
+        # Create a more robust JSON payload
+        JSON_PAYLOAD=$(jq -n --arg diff "$(cat pr_diff.txt)" '{
+          model: "llama2",
+          prompt: "You are a code reviewer. Review these changes and provide:\n1. Summary of changes\n2. Potential issues\n3. Improvement suggestions\n4. Security considerations\n\nChanges to review:\n" + $diff,
+          stream: true
+        }')
+
+        echo "Sending request to Ollama..."
+
+        # Add error handling and verbose output
+        curl -v -X POST http://localhost:11434/api/generate \
           -H 'Content-Type: application/json' \
           -d "${JSON_PAYLOAD}" | while read -r line; do
-            if echo "$line" | jq -e '.response' > /dev/null 2>&1; then
-              echo -n "$(echo "$line" | jq -r '.response')"
+            if [ -n "$line" ]; then
+              if echo "$line" | jq -e '.response' > /dev/null 2>&1; then
+                echo -n "$(echo "$line" | jq -r '.response')"
+              elif echo "$line" | jq -e '.error' > /dev/null 2>&1; then
+                echo "Error from Ollama: $(echo "$line" | jq -r '.error')" >&2
+                exit 1
+              fi
             fi
-          done
-        
-        echo -e "\n=== Review Complete ==="
+          done || {
+            echo "Failed to complete Ollama API call"
+            exit 1
+          }
 
     # Your build steps here
     - name: Build and Test
