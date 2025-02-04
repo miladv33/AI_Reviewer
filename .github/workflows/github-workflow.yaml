@@ -167,7 +167,7 @@ jobs:
             echo "EOF" >> $GITHUB_ENV
           fi
 
-- name: Review PR with Ollama
+      - name: Review PR with Ollama
         id: ai-review
         run: |
           echo "${{ env.PR_DIFF }}" > pr_diff.txt
