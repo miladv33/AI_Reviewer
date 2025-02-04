@@ -154,6 +154,28 @@ jobs:
           fi
         done < models.txt
 
+    # Fetch PR changes
+    - name: Fetch PR Changes
+      if: github.event_name == 'pull_request'
+      env:
+        GH_TOKEN: ${{ secrets.PRIVATE_KEY }}
+      run: |
+        # Get PR number
+        PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+        
+        # Fetch PR changes including deletions and additions
+        PR_CHANGES=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER \
+          --jq '.diff_url' | xargs curl -s)
+        
+        # Store changes in environment variable for later use
+        echo "PR_DIFF<<EOF" >> $GITHUB_ENV
+        echo "$PR_CHANGES" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+        
+        # Print changes for verification
+        echo "Retrieved PR changes:"
+        echo "$PR_CHANGES"
+
     - name: Test Ollama Hello
       run: |
         echo "Ollama response:"
