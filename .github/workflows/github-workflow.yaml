@@ -37,8 +37,8 @@ jobs:
         # Create cache directory
         mkdir -p ~/.cache/ollama
         
-        # Set Ollama version (using a known working version)
-        OLLAMA_VERSION="v0.1.27"
+        # Set Ollama version
+        OLLAMA_VERSION="v${{ env.OLLAMA_VERSION }}"
         echo "Using Ollama version: $OLLAMA_VERSION"
         
         # Download binary with verification
@@ -154,7 +154,16 @@ jobs:
           fi
         done < models.txt
 
-# Fetch PR changes
+    # Add debug step before PR review
+    - name: Debug Ollama Setup
+      run: |
+        echo "Ollama version: $(ollama --version)"
+        echo "Available models: $(ollama list)"
+        echo "Ollama service status: $(curl -s http://localhost:11434/api/version || echo 'not responding')"
+        echo "Memory usage: $(free -h)"
+        echo "Disk space: $(df -h)"
+
+    # Fetch PR changes
     - name: Fetch PR Changes
       env:
         GH_TOKEN: ${{ secrets.PRIVATE_KEY }}
@@ -169,65 +178,64 @@ jobs:
         fi
 
         if [ "${{ github.event_name }}" == "pull_request" ]; then
-          # For pull request events
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
         else
-          # For push events, find associated PR
           BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
           echo "Current branch: $BRANCH_NAME"
-          
-          # Search for PR associated with current branch
           PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number')
         fi
 
         if [ -n "$PR_NUMBER" ]; then
           echo "Found PR number: $PR_NUMBER"
-          
-          # Fetch PR changes including deletions and additions
-          PR_CHANGES=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER \
-            --jq '.diff_url' | xargs curl -s)
-          
-          # Store changes in environment variable for later use
+          PR_CHANGES=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.diff_url' | xargs curl -s)
           echo "PR_DIFF<<EOF" >> $GITHUB_ENV
           echo "$PR_CHANGES" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-          
-          # Print changes for verification
           echo "Retrieved PR changes:"
           echo "$PR_CHANGES"
         else
           echo "No associated PR found for current branch"
-          
-          # Get the diff of the current push
           PUSH_CHANGES=$(git diff HEAD^1 HEAD)
-          
-          # Store changes in environment variable
           echo "PR_DIFF<<EOF" >> $GITHUB_ENV
           echo "$PUSH_CHANGES" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-          
           echo "Retrieved push changes:"
           echo "$PUSH_CHANGES"
         fi
 
+    # Modified Review PR step with fixes
     - name: Review PR with Ollama
       run: |
-        # Store diff in a file for easier handling
+        # Save diff to file
         echo "${{ env.PR_DIFF }}" > pr_diff.txt
-
-        # Create a more robust JSON payload
-        JSON_PAYLOAD=$(jq -n --arg diff "$(cat pr_diff.txt)" '{
-          model: "llama2",
-          prompt: "You are a code reviewer. Review these changes and provide:\n1. Summary of changes\n2. Potential issues\n3. Improvement suggestions\n4. Security considerations\n\nChanges to review:\n" + $diff,
-          stream: true
-        }')
-
+        
+        # Debug output
+        echo "PR diff content:"
+        cat pr_diff.txt
+        
+        # Create prompt
+        PROMPT="You are a code reviewer. Review these changes and provide:
+        1. Summary of changes
+        2. Potential issues
+        3. Improvement suggestions
+        4. Security considerations
+        
+        Changes to review:
+        $(cat pr_diff.txt)"
+        
+        # Create JSON payload without using jq for string concatenation
+        echo '{
+          "model": "llama2",
+          "prompt": "'"${PROMPT//$'\n'/\\n}"'",
+          "stream": true
+        }' > payload.json
+        
         echo "Sending request to Ollama..."
-
+        
         # Add error handling and verbose output
         curl -v -X POST http://localhost:11434/api/generate \
           -H 'Content-Type: application/json' \
-          -d "${JSON_PAYLOAD}" | while read -r line; do
+          -d @payload.json | while read -r line; do
             if [ -n "$line" ]; then
               if echo "$line" | jq -e '.response' > /dev/null 2>&1; then
                 echo -n "$(echo "$line" | jq -r '.response')"
@@ -245,19 +253,29 @@ jobs:
     - name: Build and Test
       run: |
         echo "Building with cached Ollama models..."
-    
 
-    # Upload models directory for debugging
-    - name: Upload Models Directory
+    # Modified artifact upload step
+    - name: Prepare Artifacts
+      if: failure()
+      run: |
+        # Create a clean directory structure for artifacts
+        mkdir -p /tmp/ollama-artifacts/models
+        mkdir -p /tmp/ollama-artifacts/logs
+        
+        # Copy files with clean names
+        cp -r ~/.ollama/models/* /tmp/ollama-artifacts/models/ || true
+        cp ollama.log /tmp/ollama-artifacts/logs/ || true
+        
+        # Remove any problematic characters from filenames
+        find /tmp/ollama-artifacts -type f -name "*:*" -exec bash -c 'mv "$1" "${1//:/\_}"' _ {} \;
+
+    - name: Upload Cleaned Artifacts
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: ollama-models
-        path: |
-          ~/.ollama/models/
-          ollama.log
+        name: ollama-artifacts
+        path: /tmp/ollama-artifacts
         retention-days: 1
-
 
     # Cleanup
     - name: Cleanup
