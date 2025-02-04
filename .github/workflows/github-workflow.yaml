@@ -97,7 +97,10 @@ jobs:
         run: |
           mkdir -p ~/.ollama/models
           
-          # Read models from models.txt into an array
+          # Debug cache contents
+          echo "Cache contents:"
+          find ~/.ollama/models -type f -ls
+          
           declare -a required_models=()
           if [ -f "models.txt" ]; then
             while IFS= read -r model || [[ -n "$model" ]]; do
@@ -110,20 +113,14 @@ jobs:
             echo "llama2" > models.txt
           fi
           
-          # List files in the models directory
-          echo "Current cached models:"
-          ls -la ~/.ollama/models || true
-          
-          # Check which models need to be downloaded by looking at the actual model files
+          # Check for model files in blobs directory
           declare -a models_to_download=()
           for model in "${required_models[@]}"; do
-            # Check if model files exist in the cache
-            if ! ls ~/.ollama/models/*"${model}"* >/dev/null 2>&1; then
+            if ! find ~/.ollama/models/blobs -type f -exec sha256sum {} \; | grep -q .; then
               models_to_download+=("$model")
             fi
           done
           
-          # Export models as a newline-separated list
           if [ ${#models_to_download[@]} -gt 0 ]; then
             {
               echo "MODELS_TO_DOWNLOAD<<EOF"
