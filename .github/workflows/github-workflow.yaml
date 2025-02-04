@@ -252,6 +252,13 @@ jobs:
       run: |
         echo "Building with cached Ollama models..."
 
+    - name: Upload Review Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: ollama-review-results
+        path: review_output.txt
+        retention-days: 5
+
     # Upload models directory for debugging
     - name: Upload Models Directory
       if: failure()
