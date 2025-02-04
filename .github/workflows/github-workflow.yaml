@@ -134,6 +134,7 @@ jobs:
           echo "Memory usage: $(free -h)"
           echo "Disk space: $(df -h)"
 
+
       - name: Fetch PR Changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -152,55 +153,58 @@ jobs:
             
             # Fetch PR description
             echo "Fetching PR #$pr_number details..."
-            PR_TITLE=$(gh pr view $pr_number --json title --jq '.title')
-            PR_DESCRIPTION=$(gh pr view $pr_number --json body --jq '.body')
+            local pr_title
+            local pr_description
+            pr_title=$(gh pr view "$pr_number" --json title --jq '.title')
+            pr_description=$(gh pr view "$pr_number" --json body --jq '.body')
             
             # Fetch all commits
             echo "Fetching commits..."
-            COMMITS=$(gh pr view $pr_number --json commits --jq '.commits[].messageHeadline')
+            local commits
+            commits=$(gh pr view "$pr_number" --json commits --jq '.commits[].messageHeadline')
             
             # Fetch diff
             echo "Fetching diff..."
-            DIFF=$(gh pr view $pr_number --json files --jq '.files[].patch' | sed 's/"/\\"/g')
+            local diff
+            diff=$(gh pr view "$pr_number" --json files --jq '.files[].patch' | sed 's/"/\\"/g')
             
             # Fetch all comments
             echo "Fetching comments..."
-            COMMENTS=$(gh pr view $pr_number --json comments --jq '.comments[].body')
+            local comments
+            comments=$(gh pr view "$pr_number" --json comments --jq '.comments[].body')
             
             # Fetch review comments
             echo "Fetching review comments..."
-            REVIEW_COMMENTS=$(gh pr view $pr_number --json reviewComments --jq '.reviewComments[].body')
+            local review_comments
+            review_comments=$(gh pr view "$pr_number" --json reviewComments --jq '.reviewComments[].body')
             
-            # Combine all information
-            PR_CONTENT=$(cat << EOF
-            Pull Request #$pr_number
-            Title: $PR_TITLE
-            
-            Description:
-            $PR_DESCRIPTION
-            
-            Commits:
-            $COMMITS
-            
-            Changes:
-            $DIFF
-            
-            Comments:
-            $COMMENTS
-            
-            Review Comments:
-            $REVIEW_COMMENTS
-            EOF
-            )
-            
-            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
-            echo "$PR_CONTENT" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
+            # Set the PR_CONTENT environment variable using GitHub's multiline syntax
+            echo 'PR_CONTENT<<PREOF' >> $GITHUB_ENV
+            cat << 'EOF' >> $GITHUB_ENV
+Pull Request #${pr_number}
+Title: ${pr_title}
+
+Description:
+${pr_description}
+
+Commits:
+${commits}
+
+Changes:
+${diff}
+
+Comments:
+${comments}
+
+Review Comments:
+${review_comments}
+EOF
+            echo 'PREOF' >> $GITHUB_ENV
             
             # Debug output
-            echo "Content length: ${#PR_CONTENT}"
-            echo "First 100 characters:"
-            echo "$PR_CONTENT" | head -c 100
+            echo "Content has been set to GITHUB_ENV"
+            echo "Checking first few lines:"
+            head -n 5 $GITHUB_ENV
           }
           
           if [ "${{ github.event_name }}" == "pull_request" ]; then
@@ -216,11 +220,10 @@ jobs:
             fetch_pr_details "$PR_NUMBER"
           else
             echo "No PR found, using direct diff..."
-            DIRECT_DIFF=$(git diff HEAD^1 HEAD)
-            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            echo 'PR_CONTENT<<PREOF' >> $GITHUB_ENV
             echo "Direct changes from git diff:" >> $GITHUB_ENV
-            echo "$DIRECT_DIFF" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
+            git diff HEAD^1 HEAD >> $GITHUB_ENV
+            echo 'PREOF' >> $GITHUB_ENV
           fi
 
       - name: Review PR with Ollama
