@@ -139,82 +139,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Install gh CLI if not present
-          if ! command -v gh &> /dev/null; then
-            echo "Installing GitHub CLI..."
-            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-            sudo apt update && sudo apt install gh -y
-          fi
-
-          # Function to fetch PR details
-          fetch_pr_details() {
-            local pr_number=$1
-
-            # Fetch PR description
-            echo "Fetching PR #$pr_number details..."
-            local pr_title
-            local pr_description
-            pr_title=$(gh pr view "$pr_number" --json title --jq '.title')
-            pr_description=$(gh pr view "$pr_number" --json body --jq '.body')
-
-            # Fetch all commits
-            echo "Fetching commits..."
-            local commits
-            commits=$(gh pr view "$pr_number" --json commits --jq '.commits[].messageHeadline')
-
-            # Fetch diff
-            echo "Fetching diff..."
-            local diff
-            diff=$(gh pr view "$pr_number" --json files --jq '.files[].patch' | sed 's/"/\\"/g')
-
-            # Fetch all comments
-            echo "Fetching comments..."
-            local comments
-            comments=$(gh pr view "$pr_number" --json comments --jq '.comments[].body')
-
-            # Fetch review comments
-            echo "Fetching review comments..."
-            local review_comments
-            review_comments=$(gh pr view "$pr_number" --json reviewComments --jq '.reviewComments[].body')
-
-            # Set the PR_CONTENT environment variable
-            {
-              echo "Pull Request #${pr_number}"
-              echo "Title: ${pr_title}"
-              echo ""
-              echo "Description:"
-              echo "${pr_description}"
-              echo ""
-              echo "Commits:"
-              echo "${commits}"
-              echo ""
-              echo "Changes:"
-              echo "${diff}"
-              echo ""
-              echo "Comments:"
-              echo "${comments}"
-              echo ""
-              echo "Review Comments:"
-              echo "${review_comments}"
-            } > pr_content.txt
-
-            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
-            cat pr_content.txt >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          }
-
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             PR_NUMBER="${{ github.event.pull_request.number }}"
           else
             BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
-            echo "Looking for PR associated with branch: $BRANCH_NAME"
             PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number')
           fi
 
           if [ -n "$PR_NUMBER" ]; then
             echo "Found PR number: $PR_NUMBER"
-            fetch_pr_details "$PR_NUMBER"
+            PR_DATA=$(gh pr view $PR_NUMBER --json title,body,files,commits,reviews)
+
+            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            echo "$PR_DATA" | jq -r '"Title: " + .title + "\n\nDescription:\n" + .body + "\n\nChanges:\n" + (.files | map(.path + ":\n" + .patch) | join("\n\n")) + "\n\nCommits:\n" + (.commits | map(.messageHeadline) | join("\n"))' >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
           else
             echo "No PR found, using direct diff..."
             echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
