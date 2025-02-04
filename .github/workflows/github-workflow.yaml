@@ -110,10 +110,15 @@ jobs:
             echo "llama2" > models.txt
           fi
           
-          # Check which models need to be downloaded
+          # List files in the models directory
+          echo "Current cached models:"
+          ls -la ~/.ollama/models || true
+          
+          # Check which models need to be downloaded by looking at the actual model files
           declare -a models_to_download=()
           for model in "${required_models[@]}"; do
-            if ! ollama list | grep -q "$model"; then
+            # Check if model files exist in the cache
+            if ! ls ~/.ollama/models/*"${model}"* >/dev/null 2>&1; then
               models_to_download+=("$model")
             fi
           done
