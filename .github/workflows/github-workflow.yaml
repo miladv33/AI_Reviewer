@@ -1,12 +1,10 @@
 name: CI/CD with Ollama Cache
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
-# Add permissions at workflow level
 permissions:
   contents: read
   pull-requests: write
@@ -18,281 +16,213 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    # Cache Ollama binary
-    - name: Cache Ollama Binary
-      id: cache-ollama-binary
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/ollama
-          /usr/local/bin/ollama
-        key: ${{ runner.os }}-ollama-${{ env.OLLAMA_VERSION }}
+      - name: Cache Ollama Binary
+        id: cache-ollama-binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ollama
+            /usr/local/bin/ollama
+          key: ${{ runner.os }}-ollama-${{ env.OLLAMA_VERSION }}
 
-    # Install Ollama only if not cached
-    - name: Install Ollama
-      if: steps.cache-ollama-binary.outputs.cache-hit != 'true'
-      run: |
-        # Install required dependencies
-        sudo apt-get update
-        sudo apt-get install -y curl wget jq
-        
-        # Create cache directory
-        mkdir -p ~/.cache/ollama
-        
-        # Set Ollama version
-        OLLAMA_VERSION="v${{ env.OLLAMA_VERSION }}"
-        echo "Using Ollama version: $OLLAMA_VERSION"
-        
-        # Download binary with verification
-        DOWNLOAD_URL="https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64"
-        echo "Downloading from: $DOWNLOAD_URL"
-        
-        # Download with curl and verify it's a binary
-        if curl -L -o ollama-linux-amd64 "$DOWNLOAD_URL" && file ollama-linux-amd64 | grep -q "ELF"; then
-          echo "Successfully downloaded Ollama binary"
-        else
-          echo "Failed to download valid Ollama binary"
-          exit 1
-        fi
-        
-        # Make executable and install
-        chmod +x ollama-linux-amd64
-        sudo mv ollama-linux-amd64 /usr/local/bin/ollama
-        
-        # Verify installation
-        if ! ollama --version; then
-          echo "Failed to verify Ollama installation"
-          exit 1
-        fi
-        
-        # Copy to cache
-        cp /usr/local/bin/ollama ~/.cache/ollama/
-
-    # Restore Ollama binary if it was cached
-    - name: Restore Ollama Binary
-      if: steps.cache-ollama-binary.outputs.cache-hit == 'true'
-      run: |
-        sudo cp ~/.cache/ollama/ollama /usr/local/bin/
-        sudo chmod +x /usr/local/bin/ollama
-        ollama --version
-
-    # Start Ollama service with better error handling
-    - name: Start Ollama Service
-      run: |
-        # Create required directories
-        mkdir -p ~/.ollama
-        
-        # Start ollama with logging
-        ollama serve > ollama.log 2>&1 &
-        
-        # Wait for the service with better error checking
-        timeout=30
-        while [ $timeout -gt 0 ]; do
-          if curl -s http://localhost:11434/api/version > /dev/null; then
-            echo "Ollama service is ready"
-            cat ollama.log
-            break
+      - name: Install Ollama
+        if: steps.cache-ollama-binary.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl wget jq
+          mkdir -p ~/.cache/ollama
+          OLLAMA_VERSION="v${{ env.OLLAMA_VERSION }}"
+          echo "Using Ollama version: $OLLAMA_VERSION"
+          DOWNLOAD_URL="https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64"
+          echo "Downloading from: $DOWNLOAD_URL"
+          if curl -L -o ollama-linux-amd64 "$DOWNLOAD_URL" && file ollama-linux-amd64 | grep -q "ELF"; then
+            echo "Successfully downloaded Ollama binary"
+          else
+            echo "Failed to download valid Ollama binary"
+            exit 1
           fi
-          
-          # Check for errors in log
-          if grep -q "error" ollama.log; then
-            echo "Error found in Ollama log:"
+          chmod +x ollama-linux-amd64
+          sudo mv ollama-linux-amd64 /usr/local/bin/ollama
+          if ! ollama --version; then
+            echo "Failed to verify Ollama installation"
+            exit 1
+          fi
+          cp /usr/local/bin/ollama ~/.cache/ollama/
+
+      - name: Restore Ollama Binary
+        if: steps.cache-ollama-binary.outputs.cache-hit == 'true'
+        run: |
+          sudo cp ~/.cache/ollama/ollama /usr/local/bin/
+          sudo chmod +x /usr/local/bin/ollama
+          ollama --version
+
+      - name: Start Ollama Service
+        run: |
+          mkdir -p ~/.ollama
+          ollama serve > ollama.log 2>&1 &
+          timeout=30
+          while [ $timeout -gt 0 ]; do
+            if curl -s http://localhost:11434/api/version > /dev/null; then
+              echo "Ollama service is ready"
+              cat ollama.log
+              break
+            fi
+            if grep -q "error" ollama.log; then
+              echo "Error found in Ollama log:"
+              cat ollama.log
+              exit 1
+            fi
+            echo "Waiting for Ollama service to start... ($timeout seconds remaining)"
+            sleep 1
+            timeout=$((timeout - 1))
+          done
+          if [ $timeout -le 0 ]; then
+            echo "Timeout waiting for Ollama service. Log contents:"
             cat ollama.log
             exit 1
           fi
-          
-          echo "Waiting for Ollama service to start... ($timeout seconds remaining)"
-          sleep 1
-          timeout=$((timeout - 1))
-        done
-        
-        if [ $timeout -le 0 ]; then
-          echo "Timeout waiting for Ollama service. Log contents:"
-          cat ollama.log
-          exit 1
-        fi
 
-    # Cache Ollama models
-    - name: Cache Ollama Models
-      id: cache-ollama-models
-      uses: actions/cache@v4
-      with:
-        path: ~/.ollama/models
-        key: ${{ runner.os }}-ollama-models-${{ hashFiles('models.txt') }}-${{ env.OLLAMA_VERSION }}
-        restore-keys: |
-          ${{ runner.os }}-ollama-models-
+      - name: Cache Ollama Models
+        id: cache-ollama-models
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama/models
+          key: ${{ runner.os }}-ollama-models-${{ hashFiles('models.txt') }}-${{ env.OLLAMA_VERSION }}
+          restore-keys: |
+            ${{ runner.os }}-ollama-models-
 
-    # Check if models.txt exists
-    - name: Check Models File
-      id: check-models
-      run: |
-        if [ -f "models.txt" ]; then
-          echo "models_exist=true" >> $GITHUB_OUTPUT
-        else
-          echo "Warning: models.txt not found. Creating with default model..."
-          echo "llama2" > models.txt
-          echo "models_exist=true" >> $GITHUB_OUTPUT
-        fi
-
-    # Download models if not cached
-    - name: Download Ollama Models
-      if: steps.cache-ollama-models.outputs.cache-hit != 'true' && steps.check-models.outputs.models_exist == 'true'
-      run: |
-        mkdir -p ~/.ollama/models
-        while IFS= read -r model || [[ -n "$model" ]]; do
-          if [[ ! -z "$model" && ! "$model" =~ ^# ]]; then
-            echo "Pulling model: $model"
-            for i in {1..3}; do
-              if ollama pull "$model"; then
-                break
-              fi
-              if [ $i -eq 3 ]; then
-                echo "Failed to pull model $model after 3 attempts"
-                exit 1
-              fi
-              echo "Retry $i pulling model $model..."
-              sleep 5
-            done
+      - name: Check Models File
+        id: check-models
+        run: |
+          if [ -f "models.txt" ]; then
+            echo "models_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "Warning: models.txt not found. Creating with default model..."
+            echo "llama2" > models.txt
+            echo "models_exist=true" >> $GITHUB_OUTPUT
           fi
-        done < models.txt
 
-    # Add debug step before PR review
-    - name: Debug Ollama Setup
-      run: |
-        echo "Ollama version: $(ollama --version)"
-        echo "Available models: $(ollama list)"
-        echo "Ollama service status: $(curl -s http://localhost:11434/api/version || echo 'not responding')"
-        echo "Memory usage: $(free -h)"
-        echo "Disk space: $(df -h)"
+      - name: Download Ollama Models
+        if: steps.cache-ollama-models.outputs.cache-hit != 'true' && steps.check-models.outputs.models_exist == 'true'
+        run: |
+          mkdir -p ~/.ollama/models
+          while IFS= read -r model || [[ -n "$model" ]]; do
+            if [[ ! -z "$model" && ! "$model" =~ ^# ]]; then
+              echo "Pulling model: $model"
+              for i in {1..3}; do
+                if ollama pull "$model"; then
+                  break
+                fi
+                if [ $i -eq 3 ]; then
+                  echo "Failed to pull model $model after 3 attempts"
+                  exit 1
+                fi
+                echo "Retry $i pulling model $model..."
+                sleep 5
+              done
+            fi
+          done < models.txt
 
-    # Fetch PR changes
-    - name: Fetch PR Changes
-      env:
-        GH_TOKEN: ${{ secrets.PRIVATE_KEY }}
-      run: |
-        # Install gh cli if not already installed
-        if ! command -v gh &> /dev/null; then
-          echo "Installing GitHub CLI..."
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh
-        fi
+      - name: Debug Ollama Setup
+        run: |
+          echo "Ollama version: $(ollama --version)"
+          echo "Available models: $(ollama list)"
+          echo "Ollama service status: $(curl -s http://localhost:11434/api/version || echo 'not responding')"
+          echo "Memory usage: $(free -h)"
+          echo "Disk space: $(df -h)"
 
-        if [ "${{ github.event_name }}" == "pull_request" ]; then
-          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
-        else
-          BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
-          echo "Current branch: $BRANCH_NAME"
-          PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number')
-        fi
+      - name: Fetch PR Changes
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_KEY }}
+        run: |
+          if ! command -v gh &> /dev/null; then
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh
+          fi
+          
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          else
+            BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+            echo "Current branch: $BRANCH_NAME"
+            PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number')
+          fi
+          
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found PR number: $PR_NUMBER"
+            PR_CHANGES=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.diff_url' | xargs curl -s)
+            echo "PR_DIFF<<EOF" >> $GITHUB_ENV
+            echo "$PR_CHANGES" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          else
+            echo "No associated PR found for current branch"
+            PUSH_CHANGES=$(git diff HEAD^1 HEAD)
+            echo "PR_DIFF<<EOF" >> $GITHUB_ENV
+            echo "$PUSH_CHANGES" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
 
-        if [ -n "$PR_NUMBER" ]; then
-          echo "Found PR number: $PR_NUMBER"
-          PR_CHANGES=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.diff_url' | xargs curl -s)
-          echo "PR_DIFF<<EOF" >> $GITHUB_ENV
-          echo "$PR_CHANGES" >> $GITHUB_ENV
+      - name: Review PR with Ollama
+        id: ai-review
+        run: |
+          echo "${{ env.PR_DIFF }}" > pr_diff.txt
+          PROMPT="You are a code reviewer. Review these changes and provide:
+          1. Summary of changes
+          2. Potential issues
+          3. Improvement suggestions
+          4. Security considerations
+          
+          Changes to review:
+          $(cat pr_diff.txt)"
+          
+          echo '{
+            "model": "llama2",
+            "prompt": "'"${PROMPT//$'\n'/\\n}"'",
+            "stream": false
+          }' > payload.json
+          
+          REVIEW_OUTPUT=$(curl -s -X POST http://localhost:11434/api/generate \
+            -H 'Content-Type: application/json' \
+            -d @payload.json | jq -r '.response')
+          
+          echo "REVIEW_TEXT<<EOF" >> $GITHUB_ENV
+          echo "$REVIEW_OUTPUT" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-          echo "Retrieved PR changes:"
-          echo "$PR_CHANGES"
-        else
-          echo "No associated PR found for current branch"
-          PUSH_CHANGES=$(git diff HEAD^1 HEAD)
-          echo "PR_DIFF<<EOF" >> $GITHUB_ENV
-          echo "$PUSH_CHANGES" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          echo "Retrieved push changes:"
-          echo "$PUSH_CHANGES"
-        fi
 
-    # Review PR with Ollama
-    - name: Review PR with Ollama
-      id: ai-review
-      run: |
-        # Save diff to file
-        echo "${{ env.PR_DIFF }}" > pr_diff.txt
-        
-        # Create prompt
-        PROMPT="You are a code reviewer. Review these changes and provide:
-        1. Summary of changes
-        2. Potential issues
-        3. Improvement suggestions
-        4. Security considerations
-        
-        Changes to review:
-        $(cat pr_diff.txt)"
-        
-        # Create JSON payload
-        echo '{
-          "model": "llama2",
-          "prompt": "'"${PROMPT//$'\n'/\\n}"'",
-          "stream": false
-        }' > payload.json
-        
-        echo "Sending request to Ollama..."
-        
-        # Capture the complete response in a variable
-        REVIEW_OUTPUT=$(curl -s -X POST http://localhost:11434/api/generate \
-          -H 'Content-Type: application/json' \
-          -d @payload.json | jq -r '.response')
-        
-        # Save to GitHub env for next step
-        echo "REVIEW_TEXT<<EOF" >> $GITHUB_ENV
-        echo "$REVIEW_OUTPUT" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
+      - name: Post AI Review to PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --body $'## 🤖 AI Code Review\n\n'"${{ env.REVIEW_TEXT }}"$'\n\n---\n*This review was automatically generated by Ollama using the llama2 model*'
 
-    # Post AI Review as PR Comment
-    - name: Post AI Review to PR
-      if: github.event_name == 'pull_request'
-      permissions:
-        pull-requests: write
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        # Create comment content
-        gh pr comment "${{ github.event.pull_request.number }}" --body "## 🤖 AI Code Review
+      - name: Build and Test
+        run: echo "Building with cached Ollama models..."
 
-${{ env.REVIEW_TEXT }}
+      - name: Prepare Artifacts
+        if: failure()
+        run: |
+          mkdir -p /tmp/ollama-artifacts/models
+          mkdir -p /tmp/ollama-artifacts/logs
+          cp -r ~/.ollama/models/* /tmp/ollama-artifacts/models/ || true
+          cp ollama.log /tmp/ollama-artifacts/logs/ || true
+          find /tmp/ollama-artifacts -type f -name "*:*" -exec bash -c 'mv "$1" "${1//:/\_}"' _ {} \;
 
----
-*This review was automatically generated by Ollama using the llama2 model*"
-        echo "Successfully posted AI review as PR comment"
+      - name: Upload Cleaned Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-artifacts
+          path: /tmp/ollama-artifacts
+          retention-days: 1
 
-    # Your build steps here
-    - name: Build and Test
-      run: |
-        echo "Building with cached Ollama models..."
-
-    # Modified artifact upload step
-    - name: Prepare Artifacts
-      if: failure()
-      run: |
-        # Create a clean directory structure for artifacts
-        mkdir -p /tmp/ollama-artifacts/models
-        mkdir -p /tmp/ollama-artifacts/logs
-        
-        # Copy files with clean names
-        cp -r ~/.ollama/models/* /tmp/ollama-artifacts/models/ || true
-        cp ollama.log /tmp/ollama-artifacts/logs/ || true
-        
-        # Remove any problematic characters from filenames
-        find /tmp/ollama-artifacts -type f -name "*:*" -exec bash -c 'mv "$1" "${1//:/\_}"' _ {} \;
-
-    - name: Upload Cleaned Artifacts
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: ollama-artifacts
-        path: /tmp/ollama-artifacts
-        retention-days: 1
-
-    # Cleanup
-    - name: Cleanup
-      if: always()
-      run: |
-        pkill ollama || true
-        sleep 2
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill ollama || true
+          sleep 2
