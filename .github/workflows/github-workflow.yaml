@@ -1,7 +1,5 @@
 name: CI/CD with Ollama Cache
 on:
-  push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
 
