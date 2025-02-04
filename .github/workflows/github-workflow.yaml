@@ -181,24 +181,24 @@ jobs:
             # Set the PR_CONTENT environment variable using GitHub's multiline syntax
             echo 'PR_CONTENT<<PREOF' >> $GITHUB_ENV
             cat << 'EOF' >> $GITHUB_ENV
-Pull Request #${pr_number}
-Title: ${pr_title}
-
-Description:
-${pr_description}
-
-Commits:
-${commits}
-
-Changes:
-${diff}
-
-Comments:
-${comments}
-
-Review Comments:
-${review_comments}
-EOF
+                  Pull Request #${pr_number}
+                  Title: ${pr_title}
+                  
+                  Description:
+                  ${pr_description}
+                  
+                  Commits:
+                  ${commits}
+                  
+                  Changes:
+                  ${diff}
+                  
+                  Comments:
+                  ${comments}
+                  
+                  Review Comments:
+                  ${review_comments}
+                  EOF
             echo 'PREOF' >> $GITHUB_ENV
             
             # Debug output
