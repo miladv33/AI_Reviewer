@@ -248,9 +248,11 @@ jobs:
             echo "Failed to complete Ollama API call"
             exit 1
           }
-# Post AI Review as PR Comment
+ # Post AI Review as PR Comment
     - name: Post AI Review to PR
       if: github.event_name == 'pull_request'
+      permissions:
+        pull-requests: write
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
