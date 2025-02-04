@@ -275,9 +275,6 @@ jobs:
 
     # Your build steps here
     - name: Build and Test
-
-    # Your build steps here
-    - name: Build and Test
       run: |
         echo "Building with cached Ollama models..."
 
