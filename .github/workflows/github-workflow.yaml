@@ -152,27 +152,6 @@ jobs:
             done
           done
 
-      - name: Download Ollama Models
-        if: steps.cache-ollama-models.outputs.cache-hit != 'true' && steps.check-models.outputs.models_exist == 'true'
-        run: |
-          mkdir -p ~/.ollama/models
-          while IFS= read -r model || [[ -n "$model" ]]; do
-            if [[ ! -z "$model" && ! "$model" =~ ^# ]]; then
-              echo "Pulling model: $model"
-              for i in {1..3}; do
-                if ollama pull "$model"; then
-                  break
-                fi
-                if [ $i -eq 3 ]; then
-                  echo "Failed to pull model $model after 3 attempts"
-                  exit 1
-                fi
-                echo "Retry $i pulling model $model..."
-                sleep 5
-              done
-            fi
-          done < models.txt
-
       - name: Debug Ollama Setup
         run: |
           echo "Ollama version: $(ollama --version)"
@@ -180,7 +159,6 @@ jobs:
           echo "Ollama service status: $(curl -s http://localhost:11434/api/version || echo 'not responding')"
           echo "Memory usage: $(free -h)"
           echo "Disk space: $(df -h)"
-
 
       - name: Fetch PR Changes
         env:
