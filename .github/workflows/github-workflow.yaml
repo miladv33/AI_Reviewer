@@ -136,52 +136,104 @@ jobs:
 
       - name: Fetch PR Changes
         env:
-          GH_TOKEN: ${{ secrets.PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Install gh CLI if not present
           if ! command -v gh &> /dev/null; then
+            echo "Installing GitHub CLI..."
             curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
             echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-            sudo apt update
-            sudo apt install gh
+            sudo apt update && sudo apt install gh -y
           fi
           
+          # Function to fetch PR details
+          fetch_pr_details() {
+            local pr_number=$1
+            
+            # Fetch PR description
+            echo "Fetching PR #$pr_number details..."
+            PR_TITLE=$(gh pr view $pr_number --json title --jq '.title')
+            PR_DESCRIPTION=$(gh pr view $pr_number --json body --jq '.body')
+            
+            # Fetch all commits
+            echo "Fetching commits..."
+            COMMITS=$(gh pr view $pr_number --json commits --jq '.commits[].messageHeadline')
+            
+            # Fetch diff
+            echo "Fetching diff..."
+            DIFF=$(gh pr view $pr_number --json files --jq '.files[].patch' | sed 's/"/\\"/g')
+            
+            # Fetch all comments
+            echo "Fetching comments..."
+            COMMENTS=$(gh pr view $pr_number --json comments --jq '.comments[].body')
+            
+            # Fetch review comments
+            echo "Fetching review comments..."
+            REVIEW_COMMENTS=$(gh pr view $pr_number --json reviewComments --jq '.reviewComments[].body')
+            
+            # Combine all information
+            PR_CONTENT=$(cat << EOF
+            Pull Request #$pr_number
+            Title: $PR_TITLE
+            
+            Description:
+            $PR_DESCRIPTION
+            
+            Commits:
+            $COMMITS
+            
+            Changes:
+            $DIFF
+            
+            Comments:
+            $COMMENTS
+            
+            Review Comments:
+            $REVIEW_COMMENTS
+            EOF
+            )
+            
+            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            echo "$PR_CONTENT" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+            
+            # Debug output
+            echo "Content length: ${#PR_CONTENT}"
+            echo "First 100 characters:"
+            echo "$PR_CONTENT" | head -c 100
+          }
+          
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+            PR_NUMBER="${{ github.event.pull_request.number }}"
           else
             BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
-            echo "Current branch: $BRANCH_NAME"
+            echo "Looking for PR associated with branch: $BRANCH_NAME"
             PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number')
           fi
           
           if [ -n "$PR_NUMBER" ]; then
             echo "Found PR number: $PR_NUMBER"
-            PR_CHANGES=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.diff_url' | xargs curl -s)
-            echo "PR_DIFF<<EOF" >> $GITHUB_ENV
-            echo "$PR_CHANGES" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
+            fetch_pr_details "$PR_NUMBER"
           else
-            echo "No associated PR found for current branch"
-            PUSH_CHANGES=$(git diff HEAD^1 HEAD)
-            echo "PR_DIFF<<EOF" >> $GITHUB_ENV
-            echo "$PUSH_CHANGES" >> $GITHUB_ENV
+            echo "No PR found, using direct diff..."
+            DIRECT_DIFF=$(git diff HEAD^1 HEAD)
+            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            echo "Direct changes from git diff:" >> $GITHUB_ENV
+            echo "$DIRECT_DIFF" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           fi
 
       - name: Review PR with Ollama
         id: ai-review
         run: |
-          echo "${{ env.PR_DIFF }}" > pr_diff.txt
-          
-          # Check if diff is empty
-          if [ ! -s pr_diff.txt ]; then
-            echo "No changes found to review"
-            echo "REVIEW_TEXT=No changes found to review" >> $GITHUB_ENV
-            exit 0
+          if [ -z "${{ env.PR_CONTENT }}" ]; then
+            echo "Error: No PR content found to review"
+            echo "REVIEW_TEXT=Error: No content found to review" >> $GITHUB_ENV
+            exit 1
           fi
           
-          # Create a more structured prompt
-          cat << EOF > review_prompt.txt
-          You are an expert code reviewer. Please analyze the following code changes and provide a detailed review with these sections:
+          # Create prompt with PR content
+          PROMPT="You are an expert code reviewer. Please analyze the following PR content and provide a detailed review with these sections:
 
           1. Summary of Changes:
           - What are the main modifications?
@@ -200,32 +252,31 @@ jobs:
           - What specific improvements would you recommend?
           - Are there any alternative approaches to consider?
 
-          Here are the changes to review:
-          $(cat pr_diff.txt)
-          EOF
+          Here is the PR content to review:
+          ${{ env.PR_CONTENT }}"
           
-          # Make the API call and handle the response
+          # Make API call to Ollama
           REVIEW_OUTPUT=$(curl -s -X POST http://localhost:11434/api/generate \
             -H 'Content-Type: application/json' \
             -d "{
               \"model\": \"llama2\",
-              \"prompt\": $(cat review_prompt.txt | jq -Rs .),
+              \"prompt\": $(echo "$PROMPT" | jq -Rs .),
               \"stream\": false
             }" | jq -r '.response')
           
-          # Verify we got a response
+          # Verify response
           if [ -z "$REVIEW_OUTPUT" ]; then
             echo "Error: No response received from Ollama"
             echo "REVIEW_TEXT=Error: AI review could not be generated" >> $GITHUB_ENV
             exit 1
           fi
           
-          # Save the review text with proper escaping
+          # Save review
           echo "REVIEW_TEXT<<EOF" >> $GITHUB_ENV
           echo "$REVIEW_OUTPUT" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
           
-          # Log for debugging
+          # Debug output
           echo "Review length: ${#REVIEW_OUTPUT}"
           echo "First 100 characters of review:"
           echo "$REVIEW_OUTPUT" | head -c 100
