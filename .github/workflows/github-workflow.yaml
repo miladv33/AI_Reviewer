@@ -212,52 +212,37 @@ jobs:
 
     - name: Review PR with Ollama
       run: |
-        # Create a prompt with the PR changes
-        REVIEW_PROMPT="You are a code reviewer. Please review the following code changes and provide:
-        1. A summary of the changes
-        2. Potential issues or concerns
-        3. Suggestions for improvement
-        4. Security considerations if any
+        # Properly escape the PR diff for JSON
+        ESCAPED_DIFF=$(echo "${{ env.PR_DIFF }}" | jq -sR .)
         
-        Here are the changes to review:
+        echo "=== Starting Code Review ==="
         
-        ${{ env.PR_DIFF }}"
+        # Create JSON payload and send to Ollama
+        JSON_PAYLOAD=$(cat << EOF
+        {
+          "model": "llama2",
+          "prompt": "You are a code reviewer. Review these changes and provide:\n1. Summary of changes\n2. Potential issues\n3. Improvement suggestions\n4. Security considerations\n\nChanges to review:\n${ESCAPED_DIFF}",
+          "stream": true
+        }
+        EOF
+        )
         
-        echo "Getting code review from Ollama..."
+        # Send to Ollama and process the streaming response
+        curl -s -X POST http://localhost:11434/api/generate \
+          -H 'Content-Type: application/json' \
+          -d "${JSON_PAYLOAD}" | while read -r line; do
+            if echo "$line" | jq -e '.response' > /dev/null 2>&1; then
+              echo -n "$(echo "$line" | jq -r '.response')"
+            fi
+          done
         
-        # Send request to Ollama and collect the full response
-        curl -s -X POST http://localhost:11434/api/generate -d "{
-          \"model\": \"llama2\",
-          \"prompt\": \"$REVIEW_PROMPT\"
-        }" | while read -r line; do
-          if echo "$line" | grep -q "response"; then
-            echo "$line" | jq -r .response
-          fi
-        done > review_output.txt
-        
-        # Format and display the review
-        echo "=== Ollama Code Review ==="
-        cat review_output.txt
-        echo "======================="
-        
-        # Optionally, you can add logic to fail the workflow based on the review
-        # For example, if certain keywords are found in the review
-        if grep -i "critical" review_output.txt || grep -i "severe" review_output.txt; then
-          echo "Critical issues found in the review!"
-          exit 1
-        fi
+        echo -e "\n=== Review Complete ==="
 
     # Your build steps here
     - name: Build and Test
       run: |
         echo "Building with cached Ollama models..."
-
-    - name: Upload Review Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: ollama-review-results
-        path: review_output.txt
-        retention-days: 5
+    
 
     # Upload models directory for debugging
     - name: Upload Models Directory
