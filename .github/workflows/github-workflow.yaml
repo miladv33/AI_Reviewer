@@ -210,18 +210,42 @@ jobs:
           echo "$PUSH_CHANGES"
         fi
 
-    - name: Test Ollama Hello
+    - name: Review PR with Ollama
       run: |
-        echo "Ollama response:"
-        curl -s -X POST http://localhost:11434/api/generate -d '{
-          "model": "llama2",
-          "prompt": "Say hello!"
-        }' | while read -r line; do
+        # Create a prompt with the PR changes
+        REVIEW_PROMPT="You are a code reviewer. Please review the following code changes and provide:
+        1. A summary of the changes
+        2. Potential issues or concerns
+        3. Suggestions for improvement
+        4. Security considerations if any
+        
+        Here are the changes to review:
+        
+        ${{ env.PR_DIFF }}"
+        
+        echo "Getting code review from Ollama..."
+        
+        # Send request to Ollama and collect the full response
+        curl -s -X POST http://localhost:11434/api/generate -d "{
+          \"model\": \"llama2\",
+          \"prompt\": \"$REVIEW_PROMPT\"
+        }" | while read -r line; do
           if echo "$line" | grep -q "response"; then
-            echo "$line" | jq -r .response | tr -d '\n'
+            echo "$line" | jq -r .response
           fi
-        done
-        echo
+        done > review_output.txt
+        
+        # Format and display the review
+        echo "=== Ollama Code Review ==="
+        cat review_output.txt
+        echo "======================="
+        
+        # Optionally, you can add logic to fail the workflow based on the review
+        # For example, if certain keywords are found in the review
+        if grep -i "critical" review_output.txt || grep -i "severe" review_output.txt; then
+          echo "Critical issues found in the review!"
+          exit 1
+        fi
 
     # Your build steps here
     - name: Build and Test
