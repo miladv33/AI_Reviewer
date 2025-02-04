@@ -118,19 +118,24 @@ jobs:
             fi
           done
           
-          # Export the list of models to download
-          echo "MODELS_TO_DOWNLOAD=${models_to_download[*]}" >> $GITHUB_ENV
-          
+          # Export models as a newline-separated list
           if [ ${#models_to_download[@]} -gt 0 ]; then
+            {
+              echo "MODELS_TO_DOWNLOAD<<EOF"
+              printf "%s\n" "${models_to_download[@]}"
+              echo "EOF"
+            } >> $GITHUB_ENV
             echo "needs_download=true" >> $GITHUB_OUTPUT
           else
+            echo "MODELS_TO_DOWNLOAD=" >> $GITHUB_ENV
             echo "needs_download=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Download Missing Ollama Models
         if: steps.check-models.outputs.needs_download == 'true'
         run: |
-          for model in $MODELS_TO_DOWNLOAD; do
+          echo "$MODELS_TO_DOWNLOAD" | while read -r model; do
+            [ -z "$model" ] && continue
             echo "Attempting to pull model: $model"
             max_retries=3
             retry_count=0
