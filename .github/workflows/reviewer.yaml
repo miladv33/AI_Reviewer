@@ -66,7 +66,16 @@ jobs:
             grep -v '^[0-9]' |
             grep -v '25[hl]' |
             grep -v '⠙\|⠸\|⠴\|⠦\|⠧\|⠇\|⠏\|⠋\|⠙\|⠹\|⠼' |
-            sed '/^$/d' |
+            # Format headings
+            sed 's/^###\([^#]\)/###\1/g' |
+            sed 's/^####\([^#]\)/####\1/g' |
+            # Format lists
+            sed 's/^-\([^ ]\)/- \1/g' |
+            # Format bold text
+            sed 's/\*\*\([^*]\+\)\*\*/\*\*\1\*\*/g' |
+            # Ensure proper line breaks between sections
+            sed '/^#/i\\' |
+            # Convert to GitHub Actions compatible format
             tr '\n' '\r' |
             sed 's/\r/\\n/g')
 
