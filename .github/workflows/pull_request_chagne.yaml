@@ -21,29 +21,39 @@ jobs:
       - name: Get PR changes
         id: pr-diff
         run: |
-          # Store the changes in a file
+          echo "=== Getting PR Changes ==="
+          
+          echo "Getting changed files..."
           echo "Changed files:" > pr_changes.txt
-          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> pr_changes.txt
-          echo "" >> pr_changes.txt
-          echo "Detailed changes:" >> pr_changes.txt
-          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> pr_changes.txt
+          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
           
-          # Store the content in an environment variable
-          PR_CHANGES=$(cat pr_changes.txt)
+          echo -e "\nGetting detailed changes..."
+          echo -e "\nDetailed changes:" >> pr_changes.txt
+          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
           
-          # Create a properly formatted output for GitHub Actions
+          echo -e "\n=== Full PR Changes Content ==="
+          cat pr_changes.txt
+          
+          # Store in environment variable
           {
             echo 'PR_CHANGES<<EOF'
-            echo "$PR_CHANGES"
+            cat pr_changes.txt
             echo 'EOF'
           } >> $GITHUB_ENV
           
           # Also set as output
-          echo "diff_content<<EOF" >> $GITHUB_OUTPUT
-          echo "$PR_CHANGES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
+          {
+            echo "diff_content<<EOF"
+            cat pr_changes.txt
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
         shell: bash
+
+      - name: Debug Output
+        run: |
+          echo "=== Debug: Content to be posted ==="
+          echo "$PR_CHANGES"
+          echo "=== End Debug ==="
 
       - name: Create PR Comment
         uses: peter-evans/create-or-update-comment@v3
@@ -54,3 +64,8 @@ jobs:
             ```diff
             ${{ env.PR_CHANGES }}
             ```
+
+      - name: Confirm Comment Creation
+        run: |
+          echo "=== Changes have been posted to PR #${{ github.event.pull_request.number }} ==="
+          echo "Content length: $(echo "$PR_CHANGES" | wc -l) lines"
