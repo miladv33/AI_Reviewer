@@ -97,50 +97,35 @@ jobs:
       - name: Check Models File and Current Cache
         id: check-models
         run: |
-          mkdir -p ~/.ollama/models
+          echo "Current directory: $(pwd)"
+          echo "Directory contents:"
+          ls -la
+          echo "\nWorkflows directory contents:"
+          ls -la .github/workflows/
           
-          echo "Cache contents before model check:"
-          find ~/.ollama/models -type f -ls
+          if [ -f ".github/workflows/models.txt" ]; then
+            echo "models.txt found in workflows directory"
+            cat .github/workflows/models.txt
+          else
+            echo "models.txt not found in workflows directory"
+          fi
+          
+          mkdir -p ~/.ollama/models
           
           # Read models from models.txt
           declare -a required_models=()
-          if [ -f "models.txt" ]; then
+          if [ -f ".github/workflows/models.txt" ]; then
             while IFS= read -r model || [[ -n "$model" ]]; do
               # Skip empty lines and comments
               if [[ ! -z "$model" && ! "$model" =~ ^[[:space:]]*# ]]; then
                 required_models+=("$model")
                 echo "Found required model: $model"
               fi
-            done < models.txt
+            done < .github/workflows/models.txt
           else
             echo "No models.txt found!"
             exit 1
           fi
-          
-          # Verify each required model
-          declare -a models_to_download=()
-          for model in "${required_models[@]}"; do
-            model_manifest="$HOME/.ollama/models/manifests/registry.ollama.ai/library/${model}/latest"
-            if [ ! -f "$model_manifest" ]; then
-              echo "Model $model not found in cache"
-              models_to_download+=("$model")
-            else
-              echo "Found cached model: $model"
-            fi
-          done
-          
-          if [ ${#models_to_download[@]} -gt 0 ]; then
-            {
-              echo "MODELS_TO_DOWNLOAD<<EOF"
-              printf "%s\n" "${models_to_download[@]}"
-              echo "EOF"
-            } >> $GITHUB_ENV
-            echo "needs_download=true" >> $GITHUB_OUTPUT
-          else
-            echo "All required models are cached"
-            echo "needs_download=false" >> $GITHUB_OUTPUT
-          fi
-
 
       - name: Download Missing Ollama Models
         if: steps.check-models.outputs.needs_download == 'true'
