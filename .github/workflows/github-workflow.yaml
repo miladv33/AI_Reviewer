@@ -233,7 +233,14 @@ jobs:
         run: |
           MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
           echo "Current model: $MODEL_NAME"
-          printf "Hello\n" | ollama run "$MODEL_NAME"
+
+          curl -X POST http://localhost:11434/api/generate \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"model\": \"$MODEL_NAME\",
+              \"prompt\": \"Hello\",
+              \"stream\": false
+            }"
 
 #      - name: Review PR with Ollama
 #        run: |
