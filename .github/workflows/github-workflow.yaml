@@ -156,14 +156,6 @@ jobs:
             sleep 5
           done
 
-      - name: Debug Ollama Setup
-        run: |
-          echo "Ollama version: $(ollama --version)"
-          echo "Available models: $(ollama list)"
-          echo "Ollama service status: $(curl -s http://localhost:11434/api/version || echo 'not responding')"
-          echo "Memory usage: $(free -h)"
-          echo "Disk space: $(df -h)"
-
       - name: Fetch PR Changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
