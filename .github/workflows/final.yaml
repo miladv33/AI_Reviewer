@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   test-ollama:
     runs-on: ubuntu-latest
@@ -56,45 +60,31 @@ jobs:
         id: run-model
         run: |
           # Create the prompt with specific request for completion
-          PROMPT="Please review the following pull request for any potential issues or improvements. Format your response as a structured review with clear sections for: 1) Code Quality, 2) Performance, 3) Security, 4) Documentation, and 5) Testing. End your response with a clear 'END OF REVIEW' marker."
+          PROMPT="Please review the following pull request for any potential issues or improvements. Format your response as a structured review with clear sections for: 1) Code Quality, 2) Performance, 3) Security, 4) Documentation, and 5) Testing. End your response with a clear 'END OF REVIEW' marker.
+
+          Here are the changes to review:
+          ${{ env.PR_CHANGES }}"
+          
+          echo "Running model with prompt..."
           
           # Run the model and capture complete response
           response=$(echo "$PROMPT" | ollama run deepseek-r1:1.5b 2>/dev/null | 
             grep -v '^[0-9]' | 
             grep -v '25[hl]' | 
             grep -v '⠙\|⠸\|⠴\|⠦\|⠧\|⠇\|⠏\|⠋\|⠙\|⠹\|⠼' | 
-            sed '/^$/d' |
-            tr '\n' '\r' | 
-            sed 's/\r/\\n/g')
+            sed '/^$/d')
           
-          # Create formatted output with headers and separators
-          formatted_output="::group::Model Response\\n"
-          formatted_output+="Sending code review request to DeepSeek model...\\n"
-          formatted_output+="----------------------------------------\\n"
-          formatted_output+="Model response:\\n"
-          formatted_output+="----------------------------------------\\n"
-          formatted_output+="$(echo -e "$response" | sed 's/^/> /')\\n"
-          formatted_output+="----------------------------------------\\n"
-          formatted_output+="::endgroup::"
+          echo "Raw model response:"
+          echo "$response"
           
-          # Store both raw response and formatted output in GITHUB_OUTPUT
-          {
-            echo "response<<EOF"
-            echo -e "$response"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          # Escape the response for GitHub Actions
+          escaped_response=$(echo "$response" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | tr '\n' ' ')
           
-          {
-            echo "formatted_output<<EOF"
-            echo -e "$formatted_output"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          echo "MODEL_RESPONSE<<EOF" >> $GITHUB_ENV
+          echo "$escaped_response" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
           
-          # Display the formatted output
-          echo -e "$formatted_output"
-          
-          # Set model response as environment variable for the next step
-          echo "MODEL_RESPONSE=$response" >> $GITHUB_ENV
+          echo "Response saved to environment variable"
 
       - name: Comment PR with AI Review
         id: pr-comment
