@@ -234,7 +234,9 @@ jobs:
           MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
           echo "Current model: $MODEL_NAME"
           echo "Testing basic response..."
-          echo "Hello" | ollama run "$MODEL_NAME" -v
+          ollama run "$MODEL_NAME" << EOF
+          Say hello
+          EOF
 
 #      - name: Review PR with Ollama
 #        run: |
