@@ -229,6 +229,10 @@ jobs:
             git diff HEAD^1 HEAD >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           fi
+      - name: Test Model Response
+        run: |
+          MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
+          echo "Hello" | ollama run "$MODEL_NAME"
 
       - name: Review PR with Ollama
         run: |
