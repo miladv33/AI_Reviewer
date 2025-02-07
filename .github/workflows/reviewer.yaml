@@ -8,10 +8,7 @@ jobs:
   test-ollama:
     runs-on: ubuntu-latest
     outputs:
-      model_response: ${{ steps.run-model.outputs.response }}
-    env:
-      MODEL_RESPONSE: ${{ steps.run-model.outputs.response }}
-
+      response: ${{ steps.run-model.outputs.response }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -34,7 +31,6 @@ jobs:
           echo -e "\n=== Full PR Changes Content ==="
           cat pr_changes.txt
 
-          # Store in environment variable
           {
             echo 'PR_CHANGES<<EOF'
             cat pr_changes.txt
@@ -85,30 +81,21 @@ jobs:
             tr '\n' '\r' |
             sed 's/\r/\\n/g')
 
-          # Create formatted output with headers and separators
-          formatted_output="::group::Model Response\\n"
-          formatted_output+="$response\\n"
-          formatted_output+="::endgroup::"
-
-          echo -e "$formatted_output"
-
-          # Set output for next job
-          echo "response<<EOF" >> $GITHUB_OUTPUT
-          echo "$response" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "response=$response" >> $GITHUB_OUTPUT
 
   comment-on-pr:
     needs: test-ollama
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
-
     steps:
       - name: Comment AI Review on PR
         uses: actions/github-script@v7
+        env:
+          RESPONSE: ${{ needs.test-ollama.outputs.response }}
         with:
           script: |
-            const modelResponse = process.env.MODEL_RESPONSE || '';
+            const modelResponse = process.env.RESPONSE || '';
             const cleanResponse = modelResponse
               .replace(/\\n/g, '\n')
               .replace(/[^\x20-\x7E\n]/g, '') // Remove non-printable characters
