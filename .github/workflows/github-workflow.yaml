@@ -230,68 +230,85 @@ jobs:
             echo "EOF" >> $GITHUB_ENV
           fi
 
-      - name: Review PR with Ollama
-        id: ai-review
+      - name: Warm Up Model
         run: |
-          if [ -z "${{ env.PR_CONTENT }}" ]; then
-            echo "Error: No PR content found to review"
-            echo "REVIEW_TEXT=Error: No content found to review" >> $GITHUB_ENV
-            exit 1
-          fi
-          
-          # Get the model name from models.txt
+          echo "Warming up the model..."
           MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
-          echo "Using model: $MODEL_NAME for review"
           
-          # Read the prompt template
-          PROMPT_TEMPLATE=$(cat .github/workflows/codereviewprompt.txt)
-          
-          # Replace placeholder with actual PR content
-          PROMPT="${PROMPT_TEMPLATE/\{\{PR_CONTENT\}\}/${{ env.PR_CONTENT }}}"
-          
-          # Debug: Print prompt length
-          echo "Prompt length: $(echo "$PROMPT" | wc -c) characters"
-          
-          # Make API call with additional parameters and debug output
-          echo "Making API call to Ollama..."
-          API_RESPONSE=$(curl -v -s -X POST http://localhost:11434/api/generate \
-            -H 'Content-Type: application/json' \
-            -d "{
-              \"model\": \"$MODEL_NAME\",
-              \"prompt\": $(echo "$PROMPT" | jq -Rs .),
-              \"stream\": false,
-              \"temperature\": 0.7,
-              \"top_p\": 0.9,
-              \"num_predict\": 2048,
-              \"stop\": [\"</review>\"],
-              \"context_window\": 4096
-            }" 2>&1)
-          
-          echo "Raw API Response:"
-          echo "$API_RESPONSE"
-          
-          # Extract the actual response content
-          RESPONSE_CONTENT=$(echo "$API_RESPONSE" | grep -A1 '"response":' | tail -n1 | jq -r '.')
-          
-          # Check if we got a valid response
-          if [ -z "$RESPONSE_CONTENT" ] || [ "$RESPONSE_CONTENT" = "null" ]; then
-            echo "Error: Failed to get valid response from model"
-            echo "Full API Response for debugging:"
-            echo "$API_RESPONSE"
-            echo "REVIEW_TEXT=Error: Failed to generate review. Please check the model configuration." >> $GITHUB_ENV
-            exit 1
+          # Wait for Ollama service to be fully ready
+          max_retries=5
+          retry_count=0
+          while [ $retry_count -lt $max_retries ]; do
+          if curl -s http://localhost:11434/api/generate \
+           -H 'Content-Type: application/json' \
+           -d "{
+             \"model\": \"$MODEL_NAME\",
+             \"prompt\": \"Hello\",
+             \"stream\": false
+           }" | jq -e '.response' > /dev/null; then
+           echo "Model warmup successful"
+           break
           fi
           
-          # Format the output
-          FORMATTED_OUTPUT=$(echo "$RESPONSE_CONTENT" | sed '/^[[:space:]]*$/d' | sed 's/\*/•/g')
+          retry_count=$((retry_count + 1))
+          if [ $retry_count -eq $max_retries ]; then
+           echo "Failed to warm up model after $max_retries attempts"
+           exit 1
+          fi
           
-          echo "Review generated successfully. Length: $(echo "$FORMATTED_OUTPUT" | wc -c) characters"
-          echo "First 500 characters of review:"
-          echo "$FORMATTED_OUTPUT" | head -c 500
-          
-          echo "REVIEW_TEXT<<EOF" >> $GITHUB_ENV
-          echo "$FORMATTED_OUTPUT" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "Retry $retry_count warming up model..."
+          sleep 10
+          done
+
+          - name: Review PR with Ollama
+            id: ai-review
+            run: |
+              if [ -z "${{ env.PR_CONTENT }}" ]; then
+                echo "Error: No PR content found to review"
+                echo "REVIEW_TEXT=Error: No content found to review" >> $GITHUB_ENV
+                exit 1
+              fi
+              
+              MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
+              echo "Using model: $MODEL_NAME for review"
+              
+              PROMPT_TEMPLATE=$(cat .github/workflows/codereviewprompt.txt)
+              PROMPT="${PROMPT_TEMPLATE/\{\{PR_CONTENT\}\}/${{ env.PR_CONTENT }}}"
+              
+              echo "Making API call with timeout..."
+              RESPONSE=$(timeout 300 curl -s -X POST http://localhost:11434/api/generate \
+                -H 'Content-Type: application/json' \
+                -d "{
+                  \"model\": \"$MODEL_NAME\",
+                  \"prompt\": $(echo "$PROMPT" | jq -Rs .),
+                  \"stream\": false,
+                  \"temperature\": 0.7,
+                  \"num_predict\": 2048
+                }")
+              
+              if [ $? -eq 124 ]; then
+                echo "Error: Request timed out after 300 seconds"
+                echo "REVIEW_TEXT=Error: Model response timed out. Please try again." >> $GITHUB_ENV
+                exit 1
+              fi
+              
+              # Extract and verify response
+              REVIEW_OUTPUT=$(echo "$RESPONSE" | jq -r '.response')
+              if [ -z "$REVIEW_OUTPUT" ] || [ "$REVIEW_OUTPUT" = "null" ]; then
+                echo "Error: Empty or invalid response"
+                echo "Full response for debugging:"
+                echo "$RESPONSE"
+                echo "REVIEW_TEXT=Error: Failed to generate review. Please check the logs." >> $GITHUB_ENV
+                exit 1
+              fi
+              
+              # Format output
+              FORMATTED_OUTPUT=$(echo "$REVIEW_OUTPUT" | sed '/^[[:space:]]*$/d' | sed 's/\*/•/g')
+              
+              echo "Review generated successfully"
+              echo "REVIEW_TEXT<<EOF" >> $GITHUB_ENV
+              echo "$FORMATTED_OUTPUT" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
 
       - name: Post AI Review to PR
         if: github.event_name == 'pull_request'
