@@ -1,0 +1,26 @@
+name: Ollama DeepSeek Test
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  test-ollama:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          
+      - name: Download DeepSeek model
+        run: |
+          ollama pull deepseek
+        
+      - name: Test DeepSeek model
+        run: |
+          response=$(echo "hello" | ollama run deepseek)
+          echo "DeepSeek response: $response"
