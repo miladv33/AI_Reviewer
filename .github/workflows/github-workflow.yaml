@@ -180,16 +180,42 @@ jobs:
 
           if [ -n "$PR_NUMBER" ]; then
             echo "Found PR number: $PR_NUMBER"
-            PR_DATA=$(gh pr view $PR_NUMBER --json title,body,files,commits,reviews)
+            # Get detailed file changes including the actual diff content
+            PR_DATA=$(gh pr view $PR_NUMBER --json title,body,files)
 
-            # Print the PR changes directly
             echo "=== PR Changes ==="
-            echo "$PR_DATA" | jq -r '"Title: " + .title + "\n\nDescription:\n" + .body + "\n\nChanges:\n" + (.files | map(.path + ":\n" + .patch) | join("\n\n")) + "\n\nCommits:\n" + (.commits | map(.messageHeadline) | join("\n"))'
+            echo "$PR_DATA" | jq -r '
+              "Title: " + .title + "\n" +
+              "Description: " + .body + "\n\n" +
+              "Changed Files:\n" +
+              (.files | map(
+                "File: " + .path + "\n" +
+                "Status: " + .status + "\n" +
+                "Additions: " + (.additions | tostring) + "\n" +
+                "Deletions: " + (.deletions | tostring) + "\n" +
+                "Changes:\n" +
+                (.patch // "No changes shown") + "\n" +
+                "----------------------------------------"
+              ) | join("\n"))
+            '
             echo "================="
 
-            # Still store it in environment variable for later use
+            # Store for later use
             echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
-            echo "$PR_DATA" | jq -r '"Title: " + .title + "\n\nDescription:\n" + .body + "\n\nChanges:\n" + (.files | map(.path + ":\n" + .patch) | join("\n\n")) + "\n\nCommits:\n" + (.commits | map(.messageHeadline) | join("\n"))' >> $GITHUB_ENV
+            echo "$PR_DATA" | jq -r '
+              "Title: " + .title + "\n" +
+              "Description: " + .body + "\n\n" +
+              "Changed Files:\n" +
+              (.files | map(
+                "File: " + .path + "\n" +
+                "Status: " + .status + "\n" +
+                "Additions: " + (.additions | tostring) + "\n" +
+                "Deletions: " + (.deletions | tostring) + "\n" +
+                "Changes:\n" +
+                (.patch // "No changes shown") + "\n" +
+                "----------------------------------------"
+              ) | join("\n"))
+            ' >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "No PR found, using direct diff..."
