@@ -47,15 +47,12 @@ jobs:
         id: read-prompt
         run: |
           if [ -f ".github/workflows/pr_review_prompt.txt" ]; then
-            {
-              echo 'CUSTOM_PROMPT<<EOF'
-              cat .github/workflows/pr_review_prompt.txt
-              echo 'EOF'
-            } >> $GITHUB_ENV
+            CUSTOM_PROMPT=$(cat .github/workflows/pr_review_prompt.txt)
           else
+            CUSTOM_PROMPT="Please review the following pull request changes and provide feedback."
             echo "Warning: Custom prompt file not found. Using default prompt."
-            echo "CUSTOM_PROMPT=Please review the following pull request changes and provide feedback." >> $GITHUB_ENV
           fi
+          echo "CUSTOM_PROMPT=$(echo "$CUSTOM_PROMPT" | tr '\n' ' ')" >> $GITHUB_ENV
 
       - name: Run DeepSeek model
         id: run-model
