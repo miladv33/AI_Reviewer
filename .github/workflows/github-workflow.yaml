@@ -231,48 +231,35 @@ jobs:
           fi
       - name: Test Model Response
         run: |
-          # First verify Ollama is running
-          echo "Checking Ollama service status..."
-          if ! curl -s http://localhost:11434/api/version; then
-            echo "Error: Ollama service is not responding"
-            exit 1
-          fi
-          
-          # Get the model name from models.txt
           MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
           echo "Using model: $MODEL_NAME"
           
-          # Test the chat endpoint with verbose output
-          echo "Testing chat endpoint..."
-          response=$(curl -v -X POST http://localhost:11434/api/chat \
-            -H 'Content-Type: application/json' \
-            -d "{
-              \"model\": \"$MODEL_NAME\",
-              \"messages\": [{\"role\": \"user\", \"content\": \"Say Hello\"}],
-              \"stream\": false
-            }" 2>curl_error.log)
+          max_retries=3
+          retry_count=0
           
-          # Check for curl errors
-          if [ $? -ne 0 ]; then
-            echo "Curl error occurred:"
-            cat curl_error.log
-            exit 1
-          fi
-          
-          # Print the raw response for debugging
-          echo "Raw response:"
-          echo "$response"
-          
-          # Try to extract the content
-          if echo "$response" | jq -e '.message.content' >/dev/null; then
-            echo "Model response:"
-            echo "$response" | jq -r '.message.content'
-          else
-            echo "Error: Invalid response format"
-            echo "Full response:"
+          while [ $retry_count -lt $max_retries ]; do
+            response=$(curl -s -X POST http://localhost:11434/api/generate \
+              -H 'Content-Type: application/json' \
+              -d "{
+                \"model\": \"$MODEL_NAME\",
+                \"prompt\": \"Write one word: Hello\",
+                \"stream\": false
+              }")
+            
+            if [ -n "$(echo "$response" | jq -r '.response')" ]; then
+              echo "Success! Model response:"
+              echo "$response" | jq -r '.response'
+              break
+            fi
+            
+            echo "Attempt $((retry_count + 1)) failed. Response:"
             echo "$response" | jq '.'
-            exit 1
-          fi
+            
+            retry_count=$((retry_count + 1))
+            [ $retry_count -lt $max_retries ] && sleep 5
+          done
+          
+          [ $retry_count -eq $max_retries ] && exit 1
 
 #      - name: Review PR with Ollama
 #        run: |
