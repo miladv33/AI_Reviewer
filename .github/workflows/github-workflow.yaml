@@ -232,14 +232,11 @@ jobs:
       - name: Test Model Response
         run: |
           MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
-          echo "Current model: $MODEL_NAME"
-
-          curl -X POST http://localhost:11434/api/generate \
+          curl -X POST http://localhost:11434/api/chat \
             -H 'Content-Type: application/json' \
             -d "{
               \"model\": \"$MODEL_NAME\",
-              \"prompt\": \"Hello\",
-              \"stream\": false
+              \"messages\": [{\"role\": \"user\", \"content\": \"Say Hello\"}]
             }"
 
 #      - name: Review PR with Ollama
