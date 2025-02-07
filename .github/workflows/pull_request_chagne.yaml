@@ -3,67 +3,67 @@ name: Pull Request Diff Analysis
 on:
   pull_request:
     types: [opened, synchronize]
-  # This will trigger on PR creation and when new commits are pushed
+
+# Make sure to define permissions
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   analyze-pr-changes:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Fetch all history for all branches and tags
-          
+          fetch-depth: 0
+
       - name: Get PR changes
         id: pr-diff
         run: |
           # Get the PR number from the event context
-          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          PR_NUMBER="${{ github.event.pull_request.number }}"
           
-          # Initialize an empty string to store all changes
-          CHANGES=""
-          
-          # Get the base and head SHAs
-          BASE_SHA=$(git merge-base HEAD^ HEAD)
-          HEAD_SHA=$(git rev-parse HEAD)
+          # Initialize changes file
+          touch changes.txt
           
           # Get list of changed files
           echo "Changed files:" >> changes.txt
-          git diff --name-status $BASE_SHA $HEAD_SHA >> changes.txt
+          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> changes.txt
           echo "" >> changes.txt
           
           # Get detailed diff for each file
           echo "Detailed changes:" >> changes.txt
-          git diff $BASE_SHA $HEAD_SHA >> changes.txt
+          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> changes.txt
           
-          # Read the changes into a variable
+          # Read the changes into a variable and escape it
           CHANGES=$(cat changes.txt)
-          
-          # Escape the content for GitHub Actions
           CHANGES="${CHANGES//'%'/'%25'}"
           CHANGES="${CHANGES//$'\n'/'%0A'}"
           CHANGES="${CHANGES//$'\r'/'%0D'}"
           
-          # Set output variable
+          # Set output
           echo "changes=$CHANGES" >> $GITHUB_OUTPUT
           
-          # Also print to console for immediate visibility
+          # Also print to console
           echo "Pull Request #$PR_NUMBER Changes:"
-          echo "$CHANGES"
+          cat changes.txt
         shell: bash
-        
-      - name: Create PR comment with changes
+
+      - name: Comment PR
         uses: actions/github-script@v6
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const context = github.context;
             const changes = process.env.CHANGES;
             
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.name,
               issue_number: context.payload.pull_request.number,
-              body: '## Pull Request Changes\n\n```diff\n' + changes + '\n```'
+              body: `## Pull Request Changes\n\n\`\`\`diff\n${changes}\n\`\`\``
             });
         env:
           CHANGES: ${{ steps.pr-diff.outputs.changes }}
