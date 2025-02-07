@@ -231,13 +231,48 @@ jobs:
           fi
       - name: Test Model Response
         run: |
-          curl -X POST http://localhost:11434/api/chat \
+          # First verify Ollama is running
+          echo "Checking Ollama service status..."
+          if ! curl -s http://localhost:11434/api/version; then
+            echo "Error: Ollama service is not responding"
+            exit 1
+          fi
+          
+          # Get the model name from models.txt
+          MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
+          echo "Using model: $MODEL_NAME"
+          
+          # Test the chat endpoint with verbose output
+          echo "Testing chat endpoint..."
+          response=$(curl -v -X POST http://localhost:11434/api/chat \
             -H 'Content-Type: application/json' \
-            -d '{
-              "model": "codellama:34b",
-              "messages": [{"role": "user", "content": "Say Hello"}],
-              "stream": false
-            }' | jq -r '.message.content'
+            -d "{
+              \"model\": \"$MODEL_NAME\",
+              \"messages\": [{\"role\": \"user\", \"content\": \"Say Hello\"}],
+              \"stream\": false
+            }" 2>curl_error.log)
+          
+          # Check for curl errors
+          if [ $? -ne 0 ]; then
+            echo "Curl error occurred:"
+            cat curl_error.log
+            exit 1
+          fi
+          
+          # Print the raw response for debugging
+          echo "Raw response:"
+          echo "$response"
+          
+          # Try to extract the content
+          if echo "$response" | jq -e '.message.content' >/dev/null; then
+            echo "Model response:"
+            echo "$response" | jq -r '.message.content'
+          else
+            echo "Error: Invalid response format"
+            echo "Full response:"
+            echo "$response" | jq '.'
+            exit 1
+          fi
 
 #      - name: Review PR with Ollama
 #        run: |
