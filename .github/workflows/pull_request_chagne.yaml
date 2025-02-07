@@ -1,0 +1,69 @@
+name: Pull Request Diff Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  # This will trigger on PR creation and when new commits are pushed
+
+jobs:
+  analyze-pr-changes:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+          
+      - name: Get PR changes
+        id: pr-diff
+        run: |
+          # Get the PR number from the event context
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          
+          # Initialize an empty string to store all changes
+          CHANGES=""
+          
+          # Get the base and head SHAs
+          BASE_SHA=$(git merge-base HEAD^ HEAD)
+          HEAD_SHA=$(git rev-parse HEAD)
+          
+          # Get list of changed files
+          echo "Changed files:" >> changes.txt
+          git diff --name-status $BASE_SHA $HEAD_SHA >> changes.txt
+          echo "" >> changes.txt
+          
+          # Get detailed diff for each file
+          echo "Detailed changes:" >> changes.txt
+          git diff $BASE_SHA $HEAD_SHA >> changes.txt
+          
+          # Read the changes into a variable
+          CHANGES=$(cat changes.txt)
+          
+          # Escape the content for GitHub Actions
+          CHANGES="${CHANGES//'%'/'%25'}"
+          CHANGES="${CHANGES//$'\n'/'%0A'}"
+          CHANGES="${CHANGES//$'\r'/'%0D'}"
+          
+          # Set output variable
+          echo "changes=$CHANGES" >> $GITHUB_OUTPUT
+          
+          # Also print to console for immediate visibility
+          echo "Pull Request #$PR_NUMBER Changes:"
+          echo "$CHANGES"
+        shell: bash
+        
+      - name: Create PR comment with changes
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const changes = process.env.CHANGES;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              issue_number: context.payload.pull_request.number,
+              body: '## Pull Request Changes\n\n```diff\n' + changes + '\n```'
+            });
+        env:
+          CHANGES: ${{ steps.pr-diff.outputs.changes }}
