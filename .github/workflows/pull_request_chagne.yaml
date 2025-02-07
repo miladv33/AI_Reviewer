@@ -1,4 +1,4 @@
-name: Pull Request Diff Analysis
+name: PR Analysis and LLM Code Review
 
 on:
   pull_request:
@@ -9,12 +9,12 @@ permissions:
   pull-requests: write
 
 jobs:
-  analyze-pr-changes:
+  analyze-and-review:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -23,49 +23,73 @@ jobs:
         run: |
           echo "=== Getting PR Changes ==="
           
-          echo "Getting changed files..."
-          echo "Changed files:" > pr_changes.txt
-          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
+          # Create a file to store all PR information
+          {
+            echo "# Pull Request Information"
+            echo "PR #${{ github.event.pull_request.number }}"
+            echo "Title: ${{ github.event.pull_request.title }}"
+            echo -e "\n## Changed Files:"
+            git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
+            echo -e "\n## Detailed Changes:"
+            git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
+          } > pr_changes.txt
           
-          echo -e "\nGetting detailed changes..."
-          echo -e "\nDetailed changes:" >> pr_changes.txt
-          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
-          
-          echo -e "\n=== Full PR Changes Content ==="
-          cat pr_changes.txt
-          
-          # Store in environment variable
+          # Store in environment variable for later use
           {
             echo 'PR_CHANGES<<EOF'
             cat pr_changes.txt
             echo 'EOF'
           } >> $GITHUB_ENV
-          
-          # Also set as output
-          {
-            echo "diff_content<<EOF"
-            cat pr_changes.txt
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-        shell: bash
 
-      - name: Debug Output
+      - name: Install Ollama
         run: |
-          echo "=== Debug: Content to be posted ==="
-          echo "$PR_CHANGES"
-          echo "=== End Debug ==="
+          curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Run LLM Code Review
+        id: code-review
+        run: |
+          # Prepare the prompt for the LLM
+          PROMPT="You are a senior software engineer performing a code review. Please review the following pull request changes and provide constructive feedback, focusing on:
+          1. Code quality and best practices
+          2. Potential bugs or issues
+          3. Security considerations
+          4. Performance implications
+          5. Suggestions for improvement
+
+          Here are the changes to review:
+
+          $PR_CHANGES"
+
+          echo "::group::Running LLM Code Review"
+          # Run the LLM analysis and capture the response
+          review_response=$(echo "$PROMPT" | ollama run deepseek-r1:1.5b 2>/dev/null | grep -v '^[0-9]' | grep -v '25[hl]' | grep -v '⠙\|⠸\|⠴\|⠦\|⠧\|⠇\|⠏\|⠋\|⠙\|⠹\|⠼' | sed '/^$/d')
+          echo "::endgroup::"
+
+          # Store the review in an environment variable
+          {
+            echo 'REVIEW_RESPONSE<<EOF'
+            echo "$review_response"
+            echo 'EOF'
+          } >> $GITHUB_ENV
 
       - name: Create PR Comment
         uses: peter-evans/create-or-update-comment@v3
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            ## Pull Request Changes
+            # Pull Request Analysis and Review
+
+            ## Changes Summary
             ```diff
             ${{ env.PR_CHANGES }}
             ```
 
+            ## 🤖 AI Code Review
+            ${{ env.REVIEW_RESPONSE }}
+
+            ---
+            *Note: This is an automated code review generated using the DeepSeek LLM. Please consider this feedback alongside human review.*
+
       - name: Confirm Comment Creation
         run: |
-          echo "=== Changes have been posted to PR #${{ github.event.pull_request.number }} ==="
-          echo "Content length: $(echo "$PR_CHANGES" | wc -l) lines"
+          echo "=== Analysis and review have been posted to PR #${{ github.event.pull_request.number }} ==="
