@@ -216,7 +216,22 @@ jobs:
             # Store the formatted content for the review step
             echo "=== PR Changes ==="
             cat "$OUTPUT_FILE"
-            echo "================="
+            echo "=================="
+          
+            # Store for later use
+            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            cat "$OUTPUT_FILE" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          else
+            echo "No PR found, using direct diff..."
+            echo "=== Direct Changes ==="
+            git diff HEAD^1 HEAD
+            echo "===================="
+          
+            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            git diff HEAD^1 HEAD >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
 
       - name: Review PR with Ollama
         id: ai-review
