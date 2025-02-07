@@ -177,56 +177,46 @@ jobs:
             BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
             PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number')
           fi
-
+          
           if [ -n "$PR_NUMBER" ]; then
             echo "Found PR number: $PR_NUMBER"
-            # Get detailed file changes including the actual diff content
-            PR_DATA=$(gh pr view $PR_NUMBER --json title,body,files)
-
+          
+            # Get comprehensive PR data including detailed file changes
+            PR_DATA=$(gh pr view $PR_NUMBER --json title,body,files,commits,reviews,comments)
+          
+            # Create a temporary directory for markdown output
+            TEMP_DIR=$(mktemp -d)
+            OUTPUT_FILE="$TEMP_DIR/pr_${PR_NUMBER}_changes.md"
+          
+            # Generate markdown content similar to the Python script
+            {
+              echo "# Pull Request Changes"
+              echo "Generated on: $(date '+%Y-%m-%d %H:%M:%S')"
+              echo
+              echo "## Overview"
+              echo "$PR_DATA" | jq -r '"Title: " + .title + "\nDescription: " + .body'
+              echo
+              echo "## Changed Files"
+              echo
+          
+              echo "$PR_DATA" | jq -r '.files[] | "### " + .path + "\n" + (
+                if .status == "removed" then "🗑️ File deleted\n"
+                elif .status == "added" then "✨ New file\n"
+                elif .status == "renamed" then "📝 File renamed\n"
+                else "📝 File modified\n"
+                end
+              ) + (
+                if .patch then
+                "```diff\n" + .patch + "\n```\n"
+                else ""
+                end
+              )'
+            } > "$OUTPUT_FILE"
+          
+            # Store the formatted content for the review step
             echo "=== PR Changes ==="
-            echo "$PR_DATA" | jq -r '
-              "Title: " + .title + "\n" +
-              "Description: " + .body + "\n\n" +
-              "Changed Files:\n" +
-              (.files | map(
-                "File: " + .path + "\n" +
-                "Status: " + .status + "\n" +
-                "Additions: " + (.additions | tostring) + "\n" +
-                "Deletions: " + (.deletions | tostring) + "\n" +
-                "Changes:\n" +
-                (.patch // "No changes shown") + "\n" +
-                "----------------------------------------"
-              ) | join("\n"))
-            '
+            cat "$OUTPUT_FILE"
             echo "================="
-
-            # Store for later use
-            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
-            echo "$PR_DATA" | jq -r '
-              "Title: " + .title + "\n" +
-              "Description: " + .body + "\n\n" +
-              "Changed Files:\n" +
-              (.files | map(
-                "File: " + .path + "\n" +
-                "Status: " + .status + "\n" +
-                "Additions: " + (.additions | tostring) + "\n" +
-                "Deletions: " + (.deletions | tostring) + "\n" +
-                "Changes:\n" +
-                (.patch // "No changes shown") + "\n" +
-                "----------------------------------------"
-              ) | join("\n"))
-            ' >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          else
-            echo "No PR found, using direct diff..."
-            echo "=== Direct Changes ==="
-            git diff HEAD^1 HEAD
-            echo "===================="
-
-            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
-            git diff HEAD^1 HEAD >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          fi
 
       - name: Review PR with Ollama
         id: ai-review
