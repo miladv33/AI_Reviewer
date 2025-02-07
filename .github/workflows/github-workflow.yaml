@@ -231,13 +231,13 @@ jobs:
           fi
       - name: Test Model Response
         run: |
-          MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
           curl -X POST http://localhost:11434/api/chat \
             -H 'Content-Type: application/json' \
-            -d "{
-              \"model\": \"$MODEL_NAME\",
-              \"messages\": [{\"role\": \"user\", \"content\": \"Say Hello\"}]
-            }"
+            -d '{
+              "model": "codellama:34b",
+              "messages": [{"role": "user", "content": "Say Hello"}],
+              "stream": false
+            }' | jq -r '.message.content'
 
 #      - name: Review PR with Ollama
 #        run: |
