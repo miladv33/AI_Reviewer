@@ -21,7 +21,7 @@ jobs:
           echo "::group::Model Response"
           echo "Sending prompt to DeepSeek model..."
           echo "----------------------------------------"
-          response=$(echo "hello" | ollama run deepseek-r1:1.5b)
+          response=$(echo "hello" | ollama run deepseek-r1:14b)
           echo "Model response:"
           echo "----------------------------------------"
           echo "$response" | sed 's/^/> /'
