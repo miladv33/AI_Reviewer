@@ -15,12 +15,8 @@ jobs:
       - name: Install Ollama
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
-          
-      - name: Download DeepSeek model
+
+      - name: Run DeepSeek model
         run: |
-          ollama pull deepseek
-        
-      - name: Test DeepSeek model
-        run: |
-          response=$(echo "hello" | ollama run deepseek)
+          response=$(echo "hello" | ollama run deepseek-r1:1.5b)
           echo "DeepSeek response: $response"
