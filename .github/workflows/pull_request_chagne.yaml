@@ -4,7 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize]
 
-# Make sure to define permissions
 permissions:
   contents: read
   pull-requests: write
@@ -45,24 +44,19 @@ jobs:
           
           # Set output
           echo "changes=$CHANGES" >> $GITHUB_OUTPUT
-          
-          # Also print to console
-          echo "Pull Request #$PR_NUMBER Changes:"
-          cat changes.txt
         shell: bash
 
-      - name: Comment PR
-        uses: actions/github-script@v6
+      - name: Print PR Info
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+
+      - name: Create PR Comment
+        uses: peter-evans/create-or-update-comment@v3
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const changes = process.env.CHANGES;
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.name,
-              issue_number: context.issue.number,
-              body: `## Pull Request Changes\n\n\`\`\`diff\n${changes}\n\`\`\``
-            });
-        env:
-          CHANGES: ${{ steps.pr-diff.outputs.changes }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## Pull Request Changes
+            ```diff
+            ${{ steps.pr-diff.outputs.changes }}
+            ```
