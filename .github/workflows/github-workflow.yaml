@@ -232,34 +232,20 @@ jobs:
       - name: Test Model Response
         run: |
           MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
-          echo "Using model: $MODEL_NAME"
+          response=$(curl -s -X POST http://localhost:11434/api/generate \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"model\": \"$MODEL_NAME\",
+              \"prompt\": \"Write one word: Hello\",
+              \"stream\": false
+            }" | jq -r '.response')
           
-          max_retries=3
-          retry_count=0
-          
-          while [ $retry_count -lt $max_retries ]; do
-            response=$(curl -s -X POST http://localhost:11434/api/generate \
-              -H 'Content-Type: application/json' \
-              -d "{
-                \"model\": \"$MODEL_NAME\",
-                \"prompt\": \"Write one word: Hello\",
-                \"stream\": false
-              }")
-            
-            if [ -n "$(echo "$response" | jq -r '.response')" ]; then
-              echo "Success! Model response:"
-              echo "$response" | jq -r '.response'
-              break
-            fi
-            
-            echo "Attempt $((retry_count + 1)) failed. Response:"
-            echo "$response" | jq '.'
-            
-            retry_count=$((retry_count + 1))
-            [ $retry_count -lt $max_retries ] && sleep 5
-          done
-          
-          [ $retry_count -eq $max_retries ] && exit 1
+          if [ -n "$response" ]; then
+            echo "Success! Model response: $response"
+          else
+            echo "Failed to get response"
+            exit 1
+          fi
 
 #      - name: Review PR with Ollama
 #        run: |
