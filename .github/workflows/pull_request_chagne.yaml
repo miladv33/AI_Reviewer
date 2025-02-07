@@ -21,35 +21,28 @@ jobs:
       - name: Get PR changes
         id: pr-diff
         run: |
-          # Get the PR number from the event context
-          PR_NUMBER="${{ github.event.pull_request.number }}"
+          # Store the changes in a file
+          echo "Changed files:" > pr_changes.txt
+          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> pr_changes.txt
+          echo "" >> pr_changes.txt
+          echo "Detailed changes:" >> pr_changes.txt
+          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> pr_changes.txt
           
-          # Initialize changes file
-          touch changes.txt
+          # Store the content in an environment variable
+          PR_CHANGES=$(cat pr_changes.txt)
           
-          # Get list of changed files
-          echo "Changed files:" >> changes.txt
-          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> changes.txt
-          echo "" >> changes.txt
+          # Create a properly formatted output for GitHub Actions
+          {
+            echo 'PR_CHANGES<<EOF'
+            echo "$PR_CHANGES"
+            echo 'EOF'
+          } >> $GITHUB_ENV
           
-          # Get detailed diff for each file
-          echo "Detailed changes:" >> changes.txt
-          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} >> changes.txt
-          
-          # Read the changes into a variable and escape it
-          CHANGES=$(cat changes.txt)
-          CHANGES="${CHANGES//'%'/'%25'}"
-          CHANGES="${CHANGES//$'\n'/'%0A'}"
-          CHANGES="${CHANGES//$'\r'/'%0D'}"
-          
-          # Set output
-          echo "changes=$CHANGES" >> $GITHUB_OUTPUT
+          # Also set as output
+          echo "diff_content<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_CHANGES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
         shell: bash
-
-      - name: Print PR Info
-        run: |
-          echo "Repository: ${{ github.repository }}"
-          echo "PR Number: ${{ github.event.pull_request.number }}"
 
       - name: Create PR Comment
         uses: peter-evans/create-or-update-comment@v3
@@ -58,5 +51,5 @@ jobs:
           body: |
             ## Pull Request Changes
             ```diff
-            ${{ steps.pr-diff.outputs.changes }}
+            ${{ env.PR_CHANGES }}
             ```
