@@ -42,6 +42,7 @@ jobs:
           echo "diff_content<<EOF" >> $GITHUB_OUTPUT
           echo "$PR_CHANGES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
         shell: bash
 
       - name: Create PR Comment
