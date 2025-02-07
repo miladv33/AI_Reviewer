@@ -56,13 +56,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const context = github.context;
             const changes = process.env.CHANGES;
             
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.name,
-              issue_number: context.payload.pull_request.number,
+              issue_number: context.issue.number,
               body: `## Pull Request Changes\n\n\`\`\`diff\n${changes}\n\`\`\``
             });
         env:
