@@ -236,47 +236,21 @@ jobs:
           echo "Hello" | ollama run $MODEL_NAME
 
       - name: Review PR with Ollama
-        id: ai-review
         run: |
-          if [ -z "${{ env.PR_CONTENT }}" ]; then
-            echo "Error: No PR content found to review"
-            echo "REVIEW_TEXT=Error: No content found to review" >> $GITHUB_ENV
-            exit 1
-          fi
+          # Test model directly first
+          echo "Hello" | ollama run deepseek-r1:1.5b 
           
-          # Get the model name from models.txt
+          # Then run the actual review
           MODEL_NAME=$(grep -v '^#' .github/workflows/models.txt | tr -d '[:space:]')
-          echo "Using model: $MODEL_NAME for review"
-          
-          # Read the prompt template
           PROMPT_TEMPLATE=$(cat .github/workflows/codereviewprompt.txt)
-          
-          # Replace placeholder with actual PR content
           PROMPT="${PROMPT_TEMPLATE/\{\{PR_CONTENT\}\}/${{ env.PR_CONTENT }}}"
           
-          # Use ollama CLI directly instead of HTTP API
-          REVIEW_OUTPUT=$(echo "$PROMPT" | ollama run "$MODEL_NAME" 2>&1)
+          echo "$PROMPT" | ollama run "$MODEL_NAME" > review_output.txt
+          cat review_output.txt
           
-          # Check if we got an error
-          if [ $? -ne 0 ]; then
-            echo "Error running Ollama: $REVIEW_OUTPUT"
-            echo "REVIEW_TEXT=Error during review: $REVIEW_OUTPUT" >> $GITHUB_ENV
-            exit 1
-          fi
-          
-          # Verify we got actual content
-          if [ -z "$REVIEW_OUTPUT" ]; then
-            echo "Error: Empty response from model"
-            echo "REVIEW_TEXT=Error: Received empty response from AI model" >> $GITHUB_ENV
-            exit 1
-          fi
-          
-          # Format the output
-          FORMATTED_OUTPUT=$(echo "$REVIEW_OUTPUT" | sed '/^[[:space:]]*$/d' | sed 's/\*/•/g')
-          
-          echo "Review output generated successfully"
-          echo "REVIEW_TEXT<<EOF" >> $GITHUB_ENV
-          echo "$FORMATTED_OUTPUT" >> $GITHUB_ENV
+          # Save to env var for PR comment
+          echo "REVIEW_TEXT<<EOF" >> $GITHUB_ENV 
+          cat review_output.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       - name: Post AI Review to PR
