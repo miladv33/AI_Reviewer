@@ -88,36 +88,44 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ollama/models
-          key: ${{ runner.os }}-ollama-models-${{ hashFiles('models.txt') }}-${{ env.OLLAMA_VERSION }}
+          key: ${{ runner.os }}-ollama-models-${{ hashFiles('models.txt') }}-v2-${{ env.OLLAMA_VERSION }}
           restore-keys: |
+            ${{ runner.os }}-ollama-models-${{ hashFiles('models.txt') }}-v2-
             ${{ runner.os }}-ollama-models-
+
 
       - name: Check Models File and Current Cache
         id: check-models
         run: |
           mkdir -p ~/.ollama/models
           
-          # Debug cache contents
-          echo "Cache contents:"
+          echo "Cache contents before model check:"
           find ~/.ollama/models -type f -ls
           
+          # Read models from models.txt
           declare -a required_models=()
           if [ -f "models.txt" ]; then
             while IFS= read -r model || [[ -n "$model" ]]; do
-              if [[ ! -z "$model" && ! "$model" =~ ^# ]]; then
+              # Skip empty lines and comments
+              if [[ ! -z "$model" && ! "$model" =~ ^[[:space:]]*# ]]; then
                 required_models+=("$model")
+                echo "Found required model: $model"
               fi
             done < models.txt
           else
-            required_models+=("llama2")
-            echo "llama2" > models.txt
+            echo "No models.txt found!"
+            exit 1
           fi
           
-          # Check for model files in blobs directory
+          # Verify each required model
           declare -a models_to_download=()
           for model in "${required_models[@]}"; do
-            if ! find ~/.ollama/models/blobs -type f -exec sha256sum {} \; | grep -q .; then
+            model_manifest="$HOME/.ollama/models/manifests/registry.ollama.ai/library/${model}/latest"
+            if [ ! -f "$model_manifest" ]; then
+              echo "Model $model not found in cache"
               models_to_download+=("$model")
+            else
+              echo "Found cached model: $model"
             fi
           done
           
@@ -129,13 +137,17 @@ jobs:
             } >> $GITHUB_ENV
             echo "needs_download=true" >> $GITHUB_OUTPUT
           else
-            echo "MODELS_TO_DOWNLOAD=" >> $GITHUB_ENV
+            echo "All required models are cached"
             echo "needs_download=false" >> $GITHUB_OUTPUT
           fi
+
 
       - name: Download Missing Ollama Models
         if: steps.check-models.outputs.needs_download == 'true'
         run: |
+          echo "Available disk space before download:"
+          df -h
+          
           echo "$MODELS_TO_DOWNLOAD" | while read -r model; do
             [ -z "$model" ] && continue
             echo "Attempting to pull model: $model"
@@ -145,6 +157,8 @@ jobs:
             while [ $retry_count -lt $max_retries ]; do
               if ollama pull "$model"; then
                 echo "Successfully pulled model: $model"
+                echo "Current disk usage:"
+                df -h
                 break
               fi
           
@@ -199,57 +213,19 @@ jobs:
               echo "## Changed Files"
               echo
           
-              # Get detailed changes for each file
               echo "$PR_DATA" | jq -r '.files[] | "### " + .path + "\n" + (
                 if .status == "removed" then "🗑️ File deleted\n"
                 elif .status == "added" then "✨ New file\n"
-                elif .status == "renamed" then "📝 File renamed from: " + (.previous_path // "unknown") + "\n"
+                elif .status == "renamed" then "📝 File renamed\n"
                 else "📝 File modified\n"
                 end
               ) + (
-                "Changes:\n" +
-                "- Additions: " + (.additions | tostring) + "\n" +
-                "- Deletions: " + (.deletions | tostring) + "\n\n" +
                 if .patch then
                 "```diff\n" + .patch + "\n```\n"
-                else "No diff available\n"
+                else ""
                 end
               )'
-          
-              # Get the raw file contents if available
-              for file in $(echo "$PR_DATA" | jq -r '.files[].path'); do
-                echo "### Full content of $file"
-                echo '```'
-                if [ -f "$file" ]; then
-                  cat "$file"
-                else
-                  gh pr view $PR_NUMBER --json files --jq ".files[] | select(.path == \"$file\") | .content" 2>/dev/null || echo "Content not available"
-                fi
-                echo '```'
-                echo
-              done
-          
             } > "$OUTPUT_FILE"
-          
-            # Store the formatted content for the review step
-            echo "=== PR Changes ==="
-            cat "$OUTPUT_FILE"
-            echo "=================="
-          
-            # Store for later use
-            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
-            cat "$OUTPUT_FILE" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          else
-            echo "No PR found, using direct diff..."
-            echo "=== Direct Changes ==="
-            git diff HEAD^1 HEAD
-            echo "===================="
-          
-            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
-            git diff HEAD^1 HEAD >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          fi
           
             # Store the formatted content for the review step
             echo "=== PR Changes ==="
