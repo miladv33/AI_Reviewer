@@ -1,0 +1,71 @@
+#name: Pull Request Diff Analysis
+#
+#on:
+#  pull_request:
+#    types: [opened, synchronize]
+#
+#permissions:
+#  contents: read
+#  pull-requests: write
+#
+#jobs:
+#  analyze-pr-changes:
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - name: Checkout repository
+#        uses: actions/checkout@v3
+#        with:
+#          fetch-depth: 0
+#
+#      - name: Get PR changes
+#        id: pr-diff
+#        run: |
+#          echo "=== Getting PR Changes ==="
+#
+#          echo "Getting changed files..."
+#          echo "Changed files:" > pr_changes.txt
+#          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
+#
+#          echo -e "\nGetting detailed changes..."
+#          echo -e "\nDetailed changes:" >> pr_changes.txt
+#          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
+#
+#          echo -e "\n=== Full PR Changes Content ==="
+#          cat pr_changes.txt
+#
+#          # Store in environment variable
+#          {
+#            echo 'PR_CHANGES<<EOF'
+#            cat pr_changes.txt
+#            echo 'EOF'
+#          } >> $GITHUB_ENV
+#
+#          # Also set as output
+#          {
+#            echo "diff_content<<EOF"
+#            cat pr_changes.txt
+#            echo "EOF"
+#          } >> $GITHUB_OUTPUT
+#        shell: bash
+#
+#      - name: Debug Output
+#        run: |
+#          echo "=== Debug: Content to be posted ==="
+#          echo "$PR_CHANGES"
+#          echo "=== End Debug ==="
+#
+#      - name: Create PR Comment
+#        uses: peter-evans/create-or-update-comment@v3
+#        with:
+#          issue-number: ${{ github.event.pull_request.number }}
+#          body: |
+#            ## Pull Request Changes
+#            ```diff
+#            ${{ env.PR_CHANGES }}
+#            ```
+#
+#      - name: Confirm Comment Creation
+#        run: |
+#          echo "=== Changes have been posted to PR #${{ github.event.pull_request.number }} ==="
+#          echo "Content length: $(echo "$PR_CHANGES" | wc -l) lines"
