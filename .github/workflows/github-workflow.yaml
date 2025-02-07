@@ -101,18 +101,17 @@ jobs:
           echo "Cache contents:"
           find ~/.ollama/models -type f -ls
           
-          # Ensure models.txt exists in .github/workflows
-          if [ ! -f ".github/workflows/models.txt" ]; then
-            echo "Error: models.txt file not found in .github/workflows directory"
-            exit 1
-          fi
-          
           declare -a required_models=()
-          while IFS= read -r model || [[ -n "$model" ]]; do
-            if [[ ! -z "$model" && ! "$model" =~ ^# ]]; then
-              required_models+=("$model")
-            fi
-          done < .github/workflows/models.txt
+          if [ -f "models.txt" ]; then
+            while IFS= read -r model || [[ -n "$model" ]]; do
+              if [[ ! -z "$model" && ! "$model" =~ ^# ]]; then
+                required_models+=("$model")
+              fi
+            done < models.txt
+          else
+            required_models+=("llama2")
+            echo "llama2" > models.txt
+          fi
           
           # Check for model files in blobs directory
           declare -a models_to_download=()
@@ -183,11 +182,21 @@ jobs:
             echo "Found PR number: $PR_NUMBER"
             PR_DATA=$(gh pr view $PR_NUMBER --json title,body,files,commits,reviews)
 
+            # Print the PR changes directly
+            echo "=== PR Changes ==="
+            echo "$PR_DATA" | jq -r '"Title: " + .title + "\n\nDescription:\n" + .body + "\n\nChanges:\n" + (.files | map(.path + ":\n" + .patch) | join("\n\n")) + "\n\nCommits:\n" + (.commits | map(.messageHeadline) | join("\n"))'
+            echo "================="
+
+            # Still store it in environment variable for later use
             echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
             echo "$PR_DATA" | jq -r '"Title: " + .title + "\n\nDescription:\n" + .body + "\n\nChanges:\n" + (.files | map(.path + ":\n" + .patch) | join("\n\n")) + "\n\nCommits:\n" + (.commits | map(.messageHeadline) | join("\n"))' >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
           else
             echo "No PR found, using direct diff..."
+            echo "=== Direct Changes ==="
+            git diff HEAD^1 HEAD
+            echo "===================="
+
             echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
             git diff HEAD^1 HEAD >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
@@ -202,13 +211,6 @@ jobs:
             exit 1
           fi
           
-          # Read the first model from models.txt
-          MODEL=$(head -n 1 .github/workflows/models.txt | tr -d '\r')
-          if [ -z "$MODEL" ]; then
-            echo "Error: No model specified in models.txt"
-            exit 1
-          fi
-          
           # Read the prompt template
           PROMPT_TEMPLATE=$(cat .github/workflows/codereviewprompt.txt)
           
@@ -218,7 +220,7 @@ jobs:
           REVIEW_OUTPUT=$(curl -s -X POST http://localhost:11434/api/generate \
             -H 'Content-Type: application/json' \
             -d "{
-              \"model\": \"$MODEL\",
+              \"model\": \"llama2\",
               \"prompt\": $(echo "$PROMPT" | jq -Rs .),
               \"stream\": false
             }" | jq -r '.response' | sed 's/\*\s*$//')
