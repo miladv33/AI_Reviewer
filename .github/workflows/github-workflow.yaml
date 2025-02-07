@@ -199,19 +199,57 @@ jobs:
               echo "## Changed Files"
               echo
           
+              # Get detailed changes for each file
               echo "$PR_DATA" | jq -r '.files[] | "### " + .path + "\n" + (
                 if .status == "removed" then "🗑️ File deleted\n"
                 elif .status == "added" then "✨ New file\n"
-                elif .status == "renamed" then "📝 File renamed\n"
+                elif .status == "renamed" then "📝 File renamed from: " + (.previous_path // "unknown") + "\n"
                 else "📝 File modified\n"
                 end
               ) + (
+                "Changes:\n" +
+                "- Additions: " + (.additions | tostring) + "\n" +
+                "- Deletions: " + (.deletions | tostring) + "\n\n" +
                 if .patch then
                 "```diff\n" + .patch + "\n```\n"
-                else ""
+                else "No diff available\n"
                 end
               )'
+          
+              # Get the raw file contents if available
+              for file in $(echo "$PR_DATA" | jq -r '.files[].path'); do
+                echo "### Full content of $file"
+                echo '```'
+                if [ -f "$file" ]; then
+                  cat "$file"
+                else
+                  gh pr view $PR_NUMBER --json files --jq ".files[] | select(.path == \"$file\") | .content" 2>/dev/null || echo "Content not available"
+                fi
+                echo '```'
+                echo
+              done
+          
             } > "$OUTPUT_FILE"
+          
+            # Store the formatted content for the review step
+            echo "=== PR Changes ==="
+            cat "$OUTPUT_FILE"
+            echo "=================="
+          
+            # Store for later use
+            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            cat "$OUTPUT_FILE" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          else
+            echo "No PR found, using direct diff..."
+            echo "=== Direct Changes ==="
+            git diff HEAD^1 HEAD
+            echo "===================="
+          
+            echo "PR_CONTENT<<EOF" >> $GITHUB_ENV
+            git diff HEAD^1 HEAD >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
           
             # Store the formatted content for the review step
             echo "=== PR Changes ==="
