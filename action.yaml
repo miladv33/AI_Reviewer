@@ -63,27 +63,6 @@ runs:
       run: |
         curl -fsSL https://ollama.com/install.sh | sh
 
-    - name: Handle Prompt
-      shell: bash
-      id: handle-prompt
-      run: |
-        # Check for custom prompt file
-        if [ -f ".github/workflows/full_prompt.txt" ]; then
-          {
-            echo 'PROMPT<<ENDOFPROMPT'
-            cat .github/workflows/full_prompt.txt
-            echo 'ENDOFPROMPT'
-          } >> $GITHUB_ENV
-          echo "Using custom prompt from file"
-        else
-          {
-            echo 'PROMPT<<ENDOFPROMPT'
-            echo "${{ inputs.custom-prompt }}"
-            echo 'ENDOFPROMPT'
-          } >> $GITHUB_ENV
-          echo "Using default prompt"
-        fi
-
     - name: Run DeepSeek model
       shell: bash
       id: run-model
