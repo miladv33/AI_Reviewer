@@ -55,7 +55,7 @@ runs:
         echo "=== PR_CHANGES Environment Variable ==="
         echo "$PR_CHANGES"
         echo "=== Content of full_prompt.txt ==="
-        cat full_prompt.txt
+        cat .github/workflows/full_prompt.txt
         echo "=== End of Debug ==="
 
     - name: Install Ollama
