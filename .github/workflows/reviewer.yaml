@@ -60,7 +60,7 @@ jobs:
           echo -e "\nChanges to review:\n$PR_CHANGES" >> full_prompt.txt
 
           # Run the model and capture complete response, filtering out thinking process
-          response=$(cat full_prompt.txt | ollama run deepseek-r1:32b 2>/dev/null |
+          response=$(cat full_prompt.txt | ollama run deepseek-r1:14b 2>/dev/null |
             grep -v '^[0-9]' |
             grep -v '25[hl]' |
             grep -v '⠙\|⠸\|⠴\|⠦\|⠧\|⠇\|⠏\|⠋\|⠙\|⠹\|⠼' |
