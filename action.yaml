@@ -49,6 +49,14 @@ runs:
           cat pr_changes.txt
           echo 'EOF'
         } >> $GITHUB_ENV
+    - name: Debug PR Content
+      shell: bash
+      run: |
+        echo "=== PR_CHANGES Environment Variable ==="
+        echo "$PR_CHANGES"
+        echo "=== Content of full_prompt.txt ==="
+        cat full_prompt.txt
+        echo "=== End of Debug ==="
 
     - name: Install Ollama
       shell: bash
