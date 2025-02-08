@@ -69,13 +69,20 @@ runs:
       run: |
         # Check for custom prompt file
         if [ -f ".github/workflows/full_prompt.txt" ]; then
-          PROMPT=$(cat .github/workflows/full_prompt.txt)
+          {
+            echo 'PROMPT<<EOF'
+            cat .github/workflows/full_prompt.txt
+            echo EOF
+          } >> $GITHUB_ENV
           echo "Using custom prompt from file"
         else
-          PROMPT="${{ inputs.custom-prompt }}"
+          {
+            echo 'PROMPT<<EOF'
+            echo "${{ inputs.custom-prompt }}"
+            echo EOF
+          } >> $GITHUB_ENV
           echo "Using default prompt"
         fi
-        echo "PROMPT=$PROMPT" >> $GITHUB_ENV
 
     - name: Run DeepSeek model
       shell: bash
