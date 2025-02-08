@@ -3,8 +3,8 @@ description: 'Automatically review pull requests using DeepSeek AI model via Oll
 author: 'Milad Varvaei'
 
 branding:
-  icon: 'eye'  # Choose from: https://feathericons.com/
-  color: 'blue' # Choose from: white, yellow, blue, green, orange, red, purple, gray-dark
+  icon: 'eye'
+  color: 'blue'
 
 inputs:
   github-token:
@@ -32,15 +32,18 @@ runs:
       shell: bash
       run: |
         echo "=== Getting PR Changes ==="
-        
+
         echo "Getting changed files..."
         echo "Changed files:" > pr_changes.txt
         git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
-        
+
         echo -e "\nGetting detailed changes..."
         echo -e "\nDetailed changes:" >> pr_changes.txt
         git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | tee -a pr_changes.txt
-        
+
+        echo -e "\n=== Full PR Changes Content ==="
+        cat pr_changes.txt
+
         {
           echo 'PR_CHANGES<<EOF'
           cat pr_changes.txt
@@ -49,50 +52,62 @@ runs:
 
     - name: Install Ollama
       shell: bash
-      run: curl -fsSL https://ollama.com/install.sh | sh
-
-    - name: Read custom prompt
-      shell: bash
-      id: read-prompt
       run: |
+        curl -fsSL https://ollama.com/install.sh | sh
+
+    - name: Handle Prompt
+      shell: bash
+      id: handle-prompt
+      run: |
+        # Check for custom prompt file
         if [ -f ".github/workflows/pr_review_prompt.txt" ]; then
-          CUSTOM_PROMPT=$(cat .github/workflows/pr_review_prompt.txt)
-          echo "Using prompt from pr_review_prompt.txt file"
+          PROMPT=$(cat .github/workflows/pr_review_prompt.txt)
+          echo "Using custom prompt from file"
         else
-          CUSTOM_PROMPT="${{ inputs.custom-prompt }}"
-          echo "Using prompt from action input"
+          PROMPT="${{ inputs.custom-prompt }}"
+          echo "Using default prompt"
         fi
-        echo "CUSTOM_PROMPT=$(echo "$CUSTOM_PROMPT" | tr '\n' ' ')" >> $GITHUB_ENV
+        echo "PROMPT=$PROMPT" >> $GITHUB_ENV
 
     - name: Run DeepSeek model
       shell: bash
       id: run-model
       run: |
         # Combine prompt and changes
-        echo "${{ inputs.custom-prompt }}" > full_prompt.txt
+        echo "$PROMPT" > full_prompt.txt
         echo -e "\nChanges to review:\n$PR_CHANGES" >> full_prompt.txt
-        
-        # Run the model and capture complete response
+
+        # Run the model and capture complete response, filtering out thinking process
         response=$(cat full_prompt.txt | ollama run ${{ inputs.model }} 2>/dev/null |
           grep -v '^[0-9]' |
           grep -v '25[hl]' |
           grep -v '⠙\|⠸\|⠴\|⠦\|⠧\|⠇\|⠏\|⠋\|⠙\|⠹\|⠼' |
+          # Remove thinking process
           sed '/^<think>/,/^<\/think>/d' |
+          # Remove any remaining [] wrapped text at start of lines (common for thinking outputs)
           sed 's/^\[[^]]*\]//g' |
+          # Escape special characters
           sed 's/[`"'\'']/\\&/g' |
+          # Format headings
           sed 's/^###\([^#]\)/### \1/g' |
           sed 's/^####\([^#]\)/#### \1/g' |
+          # Format lists
           sed 's/^-\([^ ]\)/- \1/g' |
+          # Format bold text
           sed 's/\*\*\([^*]\+\)\*\*/\*\*\1\*\*/g' |
+          # Ensure proper line breaks between sections
           sed '/^#/i\\' |
+          # Escape any remaining problematic characters
           sed 's/[${}]/\\&/g' |
+          # Clean up any extra whitespace from removals
           sed '/^[[:space:]]*$/d' |
+          # Convert to GitHub Actions compatible format
           tr '\n' '\r' |
           sed 's/\r/\\n/g')
-        
+
         echo "response=$response" >> $GITHUB_OUTPUT
 
-    - name: Comment on PR
+    - name: Comment AI Review on PR
       uses: actions/github-script@v7
       with:
         github-token: ${{ inputs.github-token }}
@@ -100,7 +115,7 @@ runs:
           const modelResponse = process.env.RESPONSE || '';
           const cleanResponse = modelResponse
             .replace(/\\n/g, '\n')
-            .replace(/[^\x20-\x7E\n]/g, '')
+            .replace(/[^\x20-\x7E\n]/g, '') // Remove non-printable characters
             .trim();
             
           const aiReview = [
