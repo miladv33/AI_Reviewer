@@ -1,6 +1,6 @@
 name: 'DeepSeek PR Review'
 description: 'Automatically review pull requests using DeepSeek AI model via Ollama'
-author: 'Your Name'
+author: 'Milad Varvaei'
 
 branding:
   icon: 'eye'  # Choose from: https://feathericons.com/
