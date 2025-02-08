@@ -70,16 +70,16 @@ runs:
         # Check for custom prompt file
         if [ -f ".github/workflows/full_prompt.txt" ]; then
           {
-            echo 'PROMPT<<EOF'
+            echo 'PROMPT<<ENDOFPROMPT'
             cat .github/workflows/full_prompt.txt
-            echo EOF
+            echo 'ENDOFPROMPT'
           } >> $GITHUB_ENV
           echo "Using custom prompt from file"
         else
           {
-            echo 'PROMPT<<EOF'
+            echo 'PROMPT<<ENDOFPROMPT'
             echo "${{ inputs.custom-prompt }}"
-            echo EOF
+            echo 'ENDOFPROMPT'
           } >> $GITHUB_ENV
           echo "Using default prompt"
         fi
